@@ -1,0 +1,115 @@
+Do NOT change any game logic or mechanics. Visual and feel improvements only.
+
+---
+
+1. FULL SCREEN MAP — HIGHEST PRIORITY
+The game board must fill the entire phone screen edge to edge.
+
+- Canvas width: window.innerWidth (no margins, no padding)
+- Canvas height: window.innerHeight minus the UI bar height at bottom
+- On resize / orientation change: recalculate and redraw
+- Node positions: scale proportionally to new canvas size
+  (multiply all x,y coordinates by scaleX and scaleY factors)
+- Ensure no nodes are cut off at edges — add 5% padding from edges minimum
+- The UI bar (Army % buttons + War Cry) stays pinned to bottom
+- Remove any fixed pixel dimensions on the canvas element
+
+---
+
+2. NODE INFLUENCE CIRCLES — FIX OVERLAP
+The soft glow circles around nodes are too large and cluttering the map.
+
+- Reduce influence circle radius by 35%
+- Change influence circle opacity from current to max 0.15
+- Use a tighter radial gradient: full color at node edge, 
+  fully transparent at influence circle edge
+- Selected node ring: keep it, but make it crisp (2px stroke, 
+  not a filled circle)
+- This will make the map feel open and readable
+
+---
+
+3. UNIT SWARM CLEANUP
+Units orbiting/stacking on a castle look like a chaotic blob.
+
+- Units waiting at a castle should NOT visually orbit or cluster
+- In-transit units only: show trail and glow
+- Cap visible units per fleet at 12 (if fleet > 12 units, 
+  show 12 dots + a small number badge like "+8" floating above)
+- Spread in-transit units in a loose V-formation or 
+  staggered column (not a single point)
+- Unit radius: reduce by 1px to declutter
+
+---
+
+4. MAP LAYOUT — MORE NODES, BETTER SPREAD
+- Increase max nodes on the map by 2-3 (more territory to fight over)
+- Ensure nodes are distributed across the FULL canvas 
+  (currently bunched in center-left)
+- Minimum distance between nodes: enforce so they never overlap
+- Node size: scale with unit count (small=20 units → normal, 
+  large=40+ units → 15% bigger icon)
+
+---
+
+5. GAME FEEL — SPEED AND MOMENTUM
+- Increase unit travel speed by additional 1.2x on top of current speed
+- Add acceleration: units start at 70% speed, reach full speed after 0.3s
+- Fleet arrival: units "pop" into the destination with a small 
+  scale-up/scale-down (1.0 → 1.3 → 1.0 over 200ms) on the node
+- Node capture celebration: 3 expanding rings + icon swap animation
+  (old icon shrinks to 0, new empire icon grows from 0, 300ms total)
+
+---
+
+6. COMBAT SPARKS — MAKE THEM BETTER
+Current sparks look cluttered. Refine:
+
+- Reduce spark count to 5 per impact (was 6-8)
+- Increase spark travel distance by 50%
+- Sparks should arc outward (curved path) not straight lines
+- Spark size: start at 3px, taper to 0px
+- Spark lifetime: 500ms (slightly longer)
+- Add one large ring flash at impact point (expands 0→30px, 
+  fades in 200ms) behind the sparks
+
+---
+
+7. BACKGROUND — DEPTH AND LIFE
+- Add a subtle hex grid or dot grid pattern as background texture
+  (very low opacity: 0.04, static, drawn once to offscreen canvas)
+- Starfield: 30 stars of varying sizes (0.5px–2px), 
+  20% of them slowly drift, 80% static twinkle
+- Fog: reduce to 4 wisps max, slower drift, higher transparency
+- Add a very subtle center-screen glow (radial gradient, 
+  empire player color at 3% opacity, refreshed on empire change)
+
+---
+
+8. UI BAR POLISH
+- Army % buttons: rounded pill shape, slightly taller for easier tapping
+- Selected army % button: glow border matching player empire color
+- War Cry button: show a thin arc progress border that fills 
+  as cooldown completes (empire color)
+- Add a thin decorative line separating game canvas from UI bar
+- Font: use a sharper, more game-appropriate font if available 
+  (try 'Georgia' or system serif as fallback — no external fonts)
+
+---
+
+9. PERFORMANCE GUARD
+- All static elements (background, hex grid, vignette) drawn 
+  ONCE to an offscreen canvas, composited each frame
+- Particle arrays: cap total active particles at 80
+- If frame time exceeds 20ms: skip trail rendering that frame only
+- Use ctx.save/ctx.restore only when transform changes, 
+  not in every particle draw call
+
+---
+
+CONSTRAINTS:
+- Canvas 2D only, no WebGL
+- No new libraries or dependencies  
+- No game logic changes whatsoever
+- Must stay smooth 60fps on mobile Safari
+- Test that all 4 empires still render correctly after canvas resize

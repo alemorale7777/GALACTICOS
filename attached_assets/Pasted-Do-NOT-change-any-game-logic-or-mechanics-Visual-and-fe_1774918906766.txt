@@ -1,0 +1,97 @@
+Do NOT change any game logic or mechanics. Visual and feel improvements only.
+
+---
+
+1. FIX EGYPT PYRAMID COLOR — URGENT
+The pyramid is currently the same tan/gold as neutral castles. Fix immediately:
+
+EMPIRE_CONFIG.egypt colors:
+- nodeColor: '#00BFFF'        // bright sky blue pyramid body
+- accentColor: '#FFD700'      // gold capstone dot
+- glowColor: '#00CFFF'        // electric blue glow ring
+- unitColor: '#00BFFF'        // matching scarab units
+- fogColor: 'rgba(0, 191, 255, 0.04)'
+
+The pyramid shape must visually POP against neutral castles.
+Every empire must be instantly distinguishable at a glance.
+Also audit Rome (red), Mongols (orange), Ptolemaic (teal) — 
+make sure all 4 colors are vivid and never overlap with neutral castle tan.
+
+---
+
+2. GAME SPEED — MAKE IT FAST AND FUN
+The game currently feels slow. Increase energy:
+
+- Unit move speed: multiply current speed by 1.4x
+- Unit generation rate: increase by 20% across all nodes
+- AI decision interval: reduce by 30% (AI attacks more frequently)
+- War Cry cooldown: reduce by 25%
+- Fleet dispatch animation: units should accelerate out of the 
+  source castle (ease-in) then cruise at full speed
+
+---
+
+3. COMBAT IMPACT — ADD PUNCH
+Make attacks feel satisfying:
+
+On unit impact with a castle:
+- Flash the castle icon white for 80ms
+- Emit 6–8 small particle sparks in the empire's color
+  (particles move outward, fade over 400ms, Canvas 2D only)
+- Tiny node shake: offset x by ±3px, 3 oscillations over 200ms
+
+On castle capture:
+- Expanding ring burst (3 rings, staggered 80ms apart)
+- Node flashes new owner color at full brightness then settles
+- Play no sound (keep silent unless audio already exists)
+
+---
+
+4. UNIT TRAIL UPGRADE
+Current trails are too subtle. Make them more visible:
+
+- Trail length: 6 positions (up from 4)
+- Trail width: match unit radius
+- Trail opacity: 0.5 → 0 gradient (more visible start)
+- Trail color: empire glowColor
+
+---
+
+5. BACKGROUND ENERGY
+Add subtle life to the battlefield:
+
+- Increase existing fog drift speed by 1.5x
+- Add 12 tiny star-sparkle particles that randomly twinkle 
+  (random positions, random opacity pulses, very small radius 1–2px)
+- Add a very faint radial vignette: dark edges, slightly lighter center
+  (drawn once on a background canvas layer, not redrawn every frame)
+
+---
+
+6. WAR CRY UPGRADE
+Make it feel powerful:
+
+- On activation: flash entire screen with empire color at 8% opacity
+  for 150ms (full-canvas overlay, fades out)
+- Show empire flavor text (already implemented) but make it larger,
+  bold, and animate it floating upward 30px while fading out over 1.5s
+- Button: while on cooldown show a depleting arc border around the button
+  so player knows exactly when it recharges
+
+---
+
+7. SCORE BAR PULSE
+The green/red percentage bars at top:
+
+- When a player is winning (>60% territory): 
+  their bar slowly pulses brighter (glow effect on the bar)
+- When territory is exactly tied: both bars pulse white briefly
+
+---
+
+CONSTRAINTS:
+- Canvas 2D only
+- No new libraries
+- No game logic changes
+- Must stay 60fps on mobile Safari
+- All effects subtle enough to not obscure unit counts on nodes

@@ -1,0 +1,70 @@
+You already have a working 2D node-conquest game (similar to Galcon) with planets, fleets, and touch controls.
+
+DO NOT rebuild the game.
+
+Your task is to RESKIN the existing game into a Fantasy Kingdom theme while keeping ALL gameplay mechanics exactly the same.
+
+Only modify visuals, UI, and effects.
+
+----------------------------------
+
+1. NODES (Planets → Castles)
+- Replace planets with castle-style circular nodes.
+- Keep the circular shape for gameplay clarity.
+- Add simple castle visuals: walls, towers, or banners.
+- Keep unit count text clearly visible in the center.
+
+----------------------------------
+
+2. FLEETS (Dots → Armies)
+- Fleets should look like small marching armies instead of dots.
+- Keep movement behavior identical.
+- Add simple visual upgrades:
+  - Tiny flag icons or glowing particles
+  - Subtle trail effect behind moving units
+
+----------------------------------
+
+3. BACKGROUND (Space → Fantasy Map)
+- Replace space background with a fantasy-style terrain:
+  - Dark green / earthy tones
+  - Subtle gradient or texture (grass/land feel)
+  - Optional light fog or clouds for atmosphere
+
+----------------------------------
+
+4. UI / BUTTONS
+- Keep UI layout the same (mobile-first).
+- Restyle buttons (like "Overdrive"):
+  - Use fantasy colors (gold, stone, magic glow)
+  - Rounded, soft edges
+- Keep all functionality unchanged.
+
+----------------------------------
+
+5. VISUAL EFFECTS (IMPORTANT)
+Add simple but satisfying effects:
+- Selected node = soft glow or pulse
+- Unit generation = subtle pulsing animation
+- Moving fleets = light particle/dust trail
+- Capturing a node = quick glow or flash
+
+----------------------------------
+
+6. COLORS / FACTIONS
+- Keep player colors (green vs red), but style them as kingdoms/factions.
+- Add slight glow or aura to owned nodes.
+
+----------------------------------
+
+IMPORTANT RULES:
+- DO NOT change gameplay logic
+- DO NOT add new mechanics yet
+- DO NOT convert to 3D (must stay 2D Canvas)
+- DO NOT break mobile touch controls
+- Keep performance smooth on mobile
+
+----------------------------------
+
+GOAL:
+Make the game feel like a polished Fantasy Kingdom strategy game instead of space, while keeping it fast, simple, and visually satisfying.

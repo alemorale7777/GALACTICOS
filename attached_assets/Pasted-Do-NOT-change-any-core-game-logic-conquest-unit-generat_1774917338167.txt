@@ -1,0 +1,107 @@
+Do NOT change any core game logic (conquest, unit generation, army dispatch).
+Add an Empire/Leader selection system and swap visual assets per empire.
+
+---
+
+1. LEADER / EMPIRE SELECT SCREEN
+Before the game starts, show a full-screen leader selection UI.
+
+Available leaders (build at least 4):
+
+| Leader | Empire | Node Style | Unit Style | Color Palette |
+|---|---|---|---|---|
+| Ramesses II | Egypt | Pyramids | Scarab/orb | Gold + Sand |
+| Julius Caesar | Rome | Colosseum pillars | Legionnaire shields | Red + Silver |
+| Genghis Khan | Mongols | Yurt/fort | Horse silhouette | Brown + Orange |
+| Cleopatra | Ptolemaic | Sphinx | Ankh orb | Teal + Gold |
+
+UI requirements:
+- Large portrait card per leader (drawn in Canvas 2D or styled HTML)
+- Leader name + empire name displayed
+- "SELECT" button per card
+- Player picks their leader; AI gets randomly assigned a different one
+- Store selected empire in game state object
+
+---
+
+2. EMPIRE VISUAL SYSTEM
+Create an EMPIRE_CONFIG object like:
+
+const EMPIRE_CONFIG = {
+  egypt: {
+    nodeShape: 'pyramid',        // draw function to call
+    nodeColor: '#C8A84B',
+    unitShape: 'scarab',
+    unitColor: '#FFD700',
+    glowColor: '#FFD700',
+    fogColor: '#C8A84B',
+    accentColor: '#8B6914',
+  },
+  rome: { ... },
+  mongols: { ... },
+  ptolemaic: { ... },
+}
+
+Wire empire config into all draw calls so:
+- Player castles use their chosen empire's node shape + colors
+- Enemy castles use AI empire's node shape + colors
+- Neutral castles stay in the original default style
+
+---
+
+3. NODE DRAW FUNCTIONS
+Replace the generic castle icon with empire-specific shapes drawn in Canvas 2D:
+
+- pyramid(): Draw a triangle with a glowing capstone dot
+- colosseum(): Draw an arch shape with pillars
+- yurt(): Draw a dome with a pointed top
+- sphinx(): Draw a simplified reclining silhouette
+
+Each shape should:
+- Still pulse/breathe with the animation system already in place
+- Show the unit count number centered below or inside the shape
+- Scale cleanly from small (2–3 units) to large (20+ units) nodes
+
+---
+
+4. UNIT DRAW FUNCTIONS
+Each empire gets a unique unit visual:
+- Egypt: golden oval with faint wing lines (scarab)
+- Rome: small shield shape (rectangle + rounded top)
+- Mongols: teardrop pointing in movement direction (horse)
+- Ptolemaic: ankh cross shape (simple cross + loop top)
+
+Units should:
+- Still use the trail system already implemented
+- Rotate to face movement direction where shape is directional
+- Keep glow matching empire's glowColor
+
+---
+
+5. GAME FEEL IMPROVEMENTS (SMOOTHNESS)
+- Cap delta time to 50ms max per frame to prevent spiral-of-death on tab switch
+- Use requestAnimationFrame everywhere — remove any setInterval in render loop
+- Object pool units: instead of creating/destroying unit objects, recycle from a pool of 100
+- Sort draw calls: background → fog → nodes → units → effects → UI (strict layer order)
+- Batch all canvas state saves/restores — minimize ctx.save() calls in hot loops
+
+---
+
+6. WAR CRY — EMPIRE FLAVOR
+When War Cry activates, briefly flash empire-specific text above the button:
+- Egypt: "By the power of Ra!"
+- Rome: "For the Republic!"
+- Mongols: "Ride them down!"
+- Ptolemaic: "Glory to the Nile!"
+
+Text fades out over 1.5 seconds. Canvas 2D text, no DOM popups.
+
+---
+
+CONSTRAINTS:
+- Canvas 2D only, no WebGL
+- No new npm packages
+- All shapes drawn programmatically — no image files required
+- Leader select screen must work on mobile (touch-friendly, large tap targets)
+- Game logic files untouched — only draw functions and state config change
+- Must maintain 60fps on mobile Safari

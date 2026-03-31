@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Galácticos MVP</title>
+<style>
+  html, body {
+    margin:0;
+    padding:0;
+    overflow:hidden;
+    touch-action:none;
+    background: radial-gradient(circle at center,#000020,#000000);
+    font-family:sans-serif;
+  }
+  canvas{display:block;}
+  #abilityButton {
+    position:absolute;
+    bottom:20px;
+    left:50%;
+    transform:translateX(-50%);
+    padding:12px 20px;
+    font-size:18px;
+    background-color:#00f;
+    color:#fff;
+    border:none;
+    border-radius:8px;
+  }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<button id="abilityButton">Overdrive</button>
+<script>
+// Canvas setup
+const canvas=document.getElementById('gameCanvas');
+const ctx=canvas.getContext('2d');
+resizeCanvas();
+window.addEventListener('resize',resizeCanvas);
+function resizeCanvas(){canvas.width=window.innerWidth;canvas.height=window.innerHeight;}
+
+// Game objects
+class Planet{
+  constructor(id,x,y,owner=0,units=10){
+    this.id=id;this.x=x;this.y=y;this.owner=owner;this.units=units;
+  }
+}
+class Fleet{
+  constructor(from,to,units,owner){
+    this.from=from;this.to=to;this.units=units;this.owner=owner;
+    this.progress=0;this.speed=0.005;
+  }
+}
+class Player{constructor(id){this.id=id;this.abilityCooldown=0;}}
+class Particle{
+  constructor(x,y,color){this.x=x;this.y=y;this.vx=(Math.random()-0.5)*2;this.vy=(Math.random()-0.5)*2;this.alpha=1;this.color=color;}
+  update(){this.x+=this.vx;this.y+=this.vy;this.alpha-=0.02;}
+  draw(ctx){ctx.beginPath();ctx.arc(this.x,this.y,3,0,Math.PI*2);ctx.fillStyle=`rgba(${this.color},${this.alpha})`;ctx.fill();}
+}
+
+// Setup
+let planets=[],fleets=[],particles=[],player=new Player(1);
+function generatePlanets(){
+  planets=[];for(let i=0;i<8;i++){
+    const x=100+Math.random()*(canvas.width-200);
+    const y=100+Math.random()*(canvas.height-300);
+    const owner=(i===0)?1:(i===1)?2:0;
+    planets.push(new Planet(i,x,y,owner,10));
+  }
+}
+generatePlanets();
+
+// Input
+let selectedPlanet=null,lastPointerX=0,lastPointerY=0;
+canvas.addEventListener('pointerdown',e=>{const planet=getPlanetAt(e.clientX,e.clientY);if(planet&&planet.owner===1)selectedPlanet=planet;});
+canvas.addEventListener('pointermove',e=>{lastPointerX=e.clientX;lastPointerY=e.clientY;});
+canvas.addEventListener('pointerup',e=>{
+  if(!selectedPlanet)return;
+  const target=getPlanetAt(e.clientX,e.clientY);
+  if(target&&target!==selectedPlanet){sendFleet(selectedPlanet,target,Math.floor(selectedPlanet.units/2),1);selectedPlanet.units=Math.ceil(selectedPlanet.units/2);}
+  selectedPlanet=null;
+});
+function getPlanetAt(x,y){return planets.find(p=>Math.hypot(p.x-x,p.y-y)<30);}
+
+// Fleets
+function sendFleet(from,to,units,owner){if(units<=0)return;fleets.push(new Fleet(from,to,units,owner));}
+
+// Ability
+document.getElementById('abilityButton').addEventListener('click',()=>{
+  if(player.abilityCooldown<=0){
+    planets.forEach(p=>{if(p.owner===1)p.units*=2;});
+    player.abilityCooldown=30;
+    planets.filter(p=>p.owner===1).forEach(p=>{for(let i=0;i<30;i++)particles.push(new Particle(p.x,p.y,"0,255,0"));});
+  }
+});
+
+// Game loop
+function update(){
+  planets.forEach(p=>{if(p.owner!==0)p.units+=0.02;});
+  fleets.forEach(f=>{f.progress+=f.speed;if(f.progress>=1){resolveCombat(f);fleets.splice(fleets.indexOf(f),1);}});
+  if(player.abilityCooldown>0)player.abilityCooldown-=1/60;
+  particles.forEach(p=>{p.update();if(p.alpha<=0)particles.splice(particles.indexOf(p),1);});
+  aiLogic();
+  render();
+  requestAnimationFrame(update);
+}
+
+// Combat
+function resolveCombat(fleet){
+  const target=fleet.to;
+  if(fleet.owner===target.owner){target.units+=fleet.units;}else{if(fleet.units>=target.units){target.owner=fleet.owner;target.units=fleet.units-target.units;}else{target.units-=fleet.units;}}
+}
+
+// AI
+function aiLogic(){
+  const aiPlanets=planets.filter(p=>p.owner===2);
+  if(aiPlanets.length===0)return;
+  if(Math.random()<0.01){
+    const target=planets[Math.floor(Math.random()*planets.length)];
+    const source=aiPlanets[Math.floor(Math.random()*aiPlanets.length)];
+    if(source.units>20&&target.owner!==2){sendFleet(source,target,Math.floor(source.units/2),2);source.units=Math.ceil(source.units/2);}
+  }
+}
+
+// Render
+function render(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle="rgba(0,0,0,0.6)";ctx.fillRect(0,0,canvas.width,canvas.height);
+  const visible=planets.filter(p=>p.owner===1||distanceToPlayerPlanets(p)<200);
+  visible.forEach(p=>{ctx.beginPath();ctx.arc(p.x,p.y,30,0,Math.PI*2);ctx.fillStyle=p.owner===1?"#0f0":p.owner===2?"#f00":"#888";ctx.fill();ctx.fillStyle="#fff";ctx.font="16px sans-serif";ctx.textAlign="center";ctx.fillText(Math.floor(p.units),p.x,p.y+6);});
+  fleets.forEach(f=>{const x=f.from.x+(f.to.x-f.from.x)*f.progress;const y=f.from.y+(f.to.y-f.from.y)*f.progress;ctx.beginPath();ctx.arc(x,y,10,0,Math.PI*2);ctx.fillStyle=f.owner===1?"#0f0":"#f00";ctx.fill();});
+  particles.forEach(p=>p.draw(ctx));
+  if(selectedPlanet){ctx.beginPath();ctx.moveTo(selectedPlanet.x,selectedPlanet.y);ctx.lineTo(lastPointerX,lastPointerY);ctx.strokeStyle="#0ff";ctx.lineWidth=2;ctx.stroke();}
+}
+function distanceToPlayerPlanets(p){const playerPlanets=planets.filter(pl=>pl.owner===1);let minDist=Infinity;playerPlanets.forEach(pl=>{const dx=p.x-pl.x;const dy=p.y-pl.y;minDist=Math.min(minDist,Math.sqrt(dx*dx+dy*dy));});return minDist;}
+
+// Start loop
+update();
+</script>
+</body>
+</html>
