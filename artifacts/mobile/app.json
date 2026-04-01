@@ -19,7 +19,12 @@
     },
     "android": {},
     "web": {
-      "favicon": "./assets/images/icon.png"
+      "favicon": "./assets/images/icon.png",
+      "name": "GALACTICOS",
+      "shortName": "GALACTICOS",
+      "description": "Empire conquest strategy game",
+      "themeColor": "#0A140A",
+      "backgroundColor": "#0A140A"
     },
     "plugins": [
       [

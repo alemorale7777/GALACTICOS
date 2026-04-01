@@ -1,358 +1,548 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Animated, PanResponder, StyleSheet, View } from 'react-native';
-import Svg, {
-  Circle,
-  Defs,
-  Ellipse,
-  G,
-  Line,
-  Path,
-  Polygon,
-  RadialGradient,
-  Rect,
-  Stop,
-  Text as SvgText,
-} from 'react-native-svg';
-
-import { Fleet, Planet, useGame } from '@/context/GameContext';
+import React, { useCallback, useEffect, useRef } from 'react';
+import { Platform, PanResponder, StyleSheet, View, Text } from 'react-native';
+import { Fleet, NodeType, Planet, useGame } from '@/context/GameContext';
 import { EmpireConfig, NodeShape } from '@/constants/empires';
 
-// Star sparkle positions (fraction of width/height)
-const STAR_POSITIONS = [
-  { x: 0.15, y: 0.12 }, { x: 0.32, y: 0.08 }, { x: 0.58, y: 0.05 },
-  { x: 0.78, y: 0.11 }, { x: 0.92, y: 0.19 }, { x: 0.88, y: 0.42 },
-  { x: 0.95, y: 0.65 }, { x: 0.83, y: 0.85 }, { x: 0.62, y: 0.92 },
-  { x: 0.38, y: 0.95 }, { x: 0.18, y: 0.88 }, { x: 0.08, y: 0.62 },
-];
+// Polyfill for roundRect (Safari < 16)
+if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x: number, y: number, w: number, h: number, r: number | number[]) {
+    const rad = typeof r === 'number' ? r : r[0] ?? 0;
+    this.moveTo(x + rad, y);
+    this.lineTo(x + w - rad, y); this.arcTo(x + w, y, x + w, y + rad, rad);
+    this.lineTo(x + w, y + h - rad); this.arcTo(x + w, y + h, x + w - rad, y + h, rad);
+    this.lineTo(x + rad, y + h); this.arcTo(x, y + h, x, y + h - rad, rad);
+    this.lineTo(x, y + rad); this.arcTo(x, y, x + rad, y, rad);
+    this.closePath();
+  };
+}
 
 const HIT_EXTRA = 20;
 const FOG_RADIUS = 220;
-const GHOST_RADIUS = 290;
+const WATCHTOWER_RADIUS = 380;
+const INTEL_RADIUS = 200; // War fog: hide enemy unit counts beyond this range
+const INTEL_RADIUS_WATCHTOWER = 350;
+const TWO_PI = Math.PI * 2;
+const DEG_TO_RAD = Math.PI / 180;
 
-function isVisible(px: number, py: number, playerPlanets: Planet[]): boolean {
-  return playerPlanets.some(p => Math.hypot(p.x - px, p.y - py) < FOG_RADIUS);
-}
-function isGhost(px: number, py: number, playerPlanets: Planet[]): boolean {
-  return playerPlanets.some(p => Math.hypot(p.x - px, p.y - py) < GHOST_RADIUS);
-}
-
-// ── Fantasy fallback palette ─────────────────────────────────────────────────
-function ownerColor(o: 0 | 1 | 2) {
-  return o === 1 ? '#44EE66' : o === 2 ? '#EE3344' : '#BB9955';
-}
-function ownerGlow(o: 0 | 1 | 2) {
-  return o === 1 ? '68,238,102' : o === 2 ? '238,51,68' : '187,153,85';
-}
-function ownerGlowDark(o: 0 | 1 | 2) {
-  return o === 1 ? '18,70,28' : o === 2 ? '90,10,18' : '65,50,22';
-}
-function ownerStone(o: 0 | 1 | 2) {
-  return o === 1 ? '#228844' : o === 2 ? '#882222' : '#776644';
+// ── Intel check: can the player see unit counts on this node? ────────────────
+function hasIntel(px: number, py: number, planets: Planet[]): boolean {
+  for (let i = 0; i < planets.length; i++) {
+    const p = planets[i];
+    if (p.owner !== 1) continue;
+    const r = p.nodeType === 'watchtower' ? INTEL_RADIUS_WATCHTOWER : INTEL_RADIUS;
+    if (Math.hypot(p.x - px, p.y - py) < r) return true;
+  }
+  return false;
 }
 
-// ── Bezier helpers ────────────────────────────────────────────────────────────
-function bezierControlPoint(
-  x1: number, y1: number, x2: number, y2: number, arc: number
-): { cx: number; cy: number } {
-  const angle = Math.atan2(y2 - y1, x2 - x1);
-  const mx = (x1 + x2) / 2;
-  const my = (y1 + y2) / 2;
-  return { cx: mx - Math.sin(angle) * arc, cy: my + Math.cos(angle) * arc };
+// ── Performance thresholds ───────────────────────────────────────────────────
+const MAX_PARTICLES_HIGH = 120;
+const MAX_PARTICLES_LOW = 60;
+const MAX_TRAIL_HIGH = 3;
+const MAX_TRAIL_LOW = 2;
+const MAX_FOG_WISPS_HIGH = 3;
+const MAX_FOG_WISPS_LOW = 1;
+const FPS_DEGRADE_THRESHOLD = 45;
+
+// ── Visibility ───────────────────────────────────────────────────────────────
+function isVisible(px: number, py: number, planets: Planet[]): boolean {
+  for (let i = 0; i < planets.length; i++) {
+    const p = planets[i];
+    if (p.owner !== 1) continue;
+    const r = p.nodeType === 'watchtower' ? WATCHTOWER_RADIUS : FOG_RADIUS;
+    if (Math.hypot(p.x - px, p.y - py) < r) return true;
+  }
+  return false;
 }
 
-function bezierPoint(t: number, x1: number, y1: number, cx: number, cy: number, x2: number, y2: number) {
+// ── Bezier helpers ───────────────────────────────────────────────────────────
+function bezCtrl(x1: number, y1: number, x2: number, y2: number, arc: number) {
+  const a = Math.atan2(y2 - y1, x2 - x1);
+  return { cx: (x1 + x2) / 2 - Math.sin(a) * arc, cy: (y1 + y2) / 2 + Math.cos(a) * arc };
+}
+function bezPt(t: number, x1: number, y1: number, cx: number, cy: number, x2: number, y2: number) {
   const mt = 1 - t;
   return { x: mt * mt * x1 + 2 * mt * t * cx + t * t * x2, y: mt * mt * y1 + 2 * mt * t * cy + t * t * y2 };
 }
-
-function bezierTangentAngle(t: number, x1: number, y1: number, cx: number, cy: number, x2: number, y2: number) {
+function bezAngle(t: number, x1: number, y1: number, cx: number, cy: number, x2: number, y2: number) {
   const mt = 1 - t;
   return Math.atan2(2 * mt * (cy - y1) + 2 * t * (y2 - cy), 2 * mt * (cx - x1) + 2 * t * (x2 - cx));
 }
 
-function fleetPos(fleet: Fleet, from: Planet, to: Planet) {
-  const { cx, cy } = bezierControlPoint(from.x, from.y, to.x, to.y, fleet.arc);
-  const pos = bezierPoint(fleet.progress, from.x, from.y, cx, cy, to.x, to.y);
-  const angle = bezierTangentAngle(fleet.progress, from.x, from.y, cx, cy, to.x, to.y);
-  return { ...pos, angle, cx, cy };
+// ── Node size scaling based on unit count ────────────────────────────────────
+function nodeScale(units: number): number {
+  if (units <= 10) return 1.0;
+  if (units <= 25) return 1.0 + 0.15 * ((units - 10) / 15);
+  if (units <= 50) return 1.15 + 0.15 * ((units - 25) / 25);
+  return 1.3 + 0.15 * Math.min(1, (units - 50) / 50);
 }
 
-// ── Empire node shape paths ──────────────────────────────────────────────────
-function pyramidPath(cx: number, cy: number, r: number): string {
-  const f = (n: number) => n.toFixed(1);
-  const peak = cy - r, base = cy + r * 0.5;
-  const gL = cx - r * 0.22, gR = cx + r * 0.22, gTop = base - r * 0.38;
-  return [
-    `M${f(cx - r)},${f(base)}`,
-    `L${f(cx)},${f(peak)}`,
-    `L${f(cx + r)},${f(base)}`,
-    `L${f(gR)},${f(base)}`,
-    `L${f(gR)},${f(gTop)}`,
-    `Q${f(cx)},${f(gTop - r * 0.12)} ${f(gL)},${f(gTop)}`,
-    `L${f(gL)},${f(base)} Z`,
-  ].join(' ');
+// ── Canvas 2D shape draws — ENHANCED ─────────────────────────────────────────
+
+function drawPyramid(c: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, accent: string) {
+  const widthR = r * 1.3; // wider base ratio ~1.6:1
+  const peak = y - r, base = y + r * 0.5;
+
+  // Main triangle body
+  c.beginPath(); c.moveTo(x - widthR, base); c.lineTo(x, peak); c.lineTo(x + widthR, base); c.closePath();
+  c.fillStyle = color; c.fill();
+
+  // Stepped texture: 2 horizontal lines across pyramid
+  c.strokeStyle = 'rgba(0,0,0,0.2)'; c.lineWidth = 1;
+  const h = base - peak;
+  for (let step = 1; step <= 2; step++) {
+    const ly = peak + h * (step / 3);
+    const frac = (ly - peak) / h;
+    const hw = widthR * frac;
+    c.beginPath(); c.moveTo(x - hw, ly); c.lineTo(x + hw, ly); c.stroke();
+  }
+
+  // Base platform line
+  c.strokeStyle = accent; c.lineWidth = 2;
+  c.beginPath(); c.moveTo(x - widthR - 3, base); c.lineTo(x + widthR + 3, base); c.stroke();
+
+  // Outline
+  c.strokeStyle = accent; c.lineWidth = 1.5;
+  c.beginPath(); c.moveTo(x - widthR, base); c.lineTo(x, peak); c.lineTo(x + widthR, base); c.closePath(); c.stroke();
+
+  // Gold capstone with 4 rays
+  c.fillStyle = '#FFD700';
+  c.beginPath(); c.arc(x, peak, 3, 0, TWO_PI); c.fill();
+  c.strokeStyle = '#FFD700'; c.lineWidth = 1; c.globalAlpha = 0.7;
+  for (let i = 0; i < 4; i++) {
+    const a = (i * 90) * DEG_TO_RAD;
+    c.beginPath(); c.moveTo(x + Math.cos(a) * 3, peak + Math.sin(a) * 3);
+    c.lineTo(x + Math.cos(a) * 7, peak + Math.sin(a) * 7); c.stroke();
+  }
+  c.globalAlpha = 1;
+
+  // Gate
+  c.fillStyle = 'rgba(0,0,0,0.35)';
+  c.fillRect(x - r * 0.18, base - r * 0.32, r * 0.36, r * 0.32);
 }
 
-// Colosseum: outer rect + 3 arch cutouts (use fillRule="evenodd")
-function colosseumPath(cx: number, cy: number, r: number): string {
-  const f = (n: number) => n.toFixed(1);
-  const bot = cy + r * 0.48, top = cy - r * 0.58;
-  const wL = cx - r, wR = cx + r;
-  const n = 3, segW = (2 * r) / n;
-  const pad = r * 0.1, archW = segW - 2 * pad;
-  const archMid = cy - r * 0.08, archPeak = cy - r * 0.52;
-  let d = `M${f(wL)},${f(bot)} L${f(wL)},${f(top)} L${f(wR)},${f(top)} L${f(wR)},${f(bot)} Z`;
-  // Cornice line
-  const ledgeY = top + (bot - top) * 0.22;
-  // Add ledge as a thin slice (it will be filled the same color)
-  // Actually just add arch holes
+function drawColosseum(c: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, accent: string) {
+  const top = y - r * 0.6, bot = y + r * 0.48;
+
+  // Semicircular arch shape
+  c.beginPath();
+  c.arc(x, top + (bot - top) * 0.3, r, Math.PI, 0);
+  c.lineTo(x + r, bot); c.lineTo(x - r, bot); c.closePath();
+  c.fillStyle = color; c.fill();
+
+  // 3 arch openings cut into base
+  const n = 3, segW = (2 * r) / n, pad = r * 0.14;
+  c.fillStyle = 'rgba(0,0,0,0.4)';
   for (let i = 0; i < n; i++) {
-    const ax = wL + i * segW + pad, ax2 = ax + archW, amx = (ax + ax2) / 2;
-    d += ` M${f(ax)},${f(bot)} L${f(ax)},${f(archMid)} Q${f(amx)},${f(archPeak)} ${f(ax2)},${f(archMid)} L${f(ax2)},${f(bot)} Z`;
+    const ax = x - r + i * segW + pad, aw = segW - pad * 2;
+    c.beginPath(); c.arc(ax + aw / 2, y + r * 0.05, aw / 2, Math.PI, 0);
+    c.lineTo(ax + aw, bot); c.lineTo(ax, bot); c.closePath(); c.fill();
   }
-  return d;
-}
 
-function yurtPath(cx: number, cy: number, r: number): string {
-  const f = (n: number) => n.toFixed(1);
-  const peak = cy - r * 0.95, domeBase = cy - r * 0.05, wallBot = cy + r * 0.48, wallW = r * 0.9;
-  return [
-    `M${f(cx - wallW)},${f(wallBot)}`,
-    `L${f(cx - wallW)},${f(domeBase)}`,
-    `C${f(cx - wallW)},${f(peak + r * 0.3)} ${f(cx - r * 0.12)},${f(peak)} ${f(cx)},${f(peak)}`,
-    `C${f(cx + r * 0.12)},${f(peak)} ${f(cx + wallW)},${f(peak + r * 0.3)} ${f(cx + wallW)},${f(domeBase)}`,
-    `L${f(cx + wallW)},${f(wallBot)} Z`,
-  ].join(' ');
-}
-
-// Sphinx / pharaoh head with nemes headdress
-function sphinxPath(cx: number, cy: number, r: number): string {
-  const f = (n: number) => n.toFixed(1);
-  const nemTop = cy - r * 0.85, nemW = r * 0.8;
-  const flapsY = cy + r * 0.1, flapsW = r, beardBot = cy + r * 0.48, faceW = r * 0.48;
-  return [
-    `M${f(cx - nemW)},${f(nemTop)}`,
-    `L${f(cx + nemW)},${f(nemTop)}`,
-    `L${f(cx + flapsW)},${f(flapsY)}`,
-    `L${f(cx + faceW)},${f(flapsY)}`,
-    `L${f(cx)},${f(beardBot)}`,
-    `L${f(cx - faceW)},${f(flapsY)}`,
-    `L${f(cx - flapsW)},${f(flapsY)} Z`,
-  ].join(' ');
-}
-
-// Flag position for each empire node shape
-function empireNodeFlag(cx: number, cy: number, r: number, shape: NodeShape): { pole: string; flag: string } {
-  const f = (n: number) => n.toFixed(1);
-  let baseY: number;
-  switch (shape) {
-    case 'pyramid':  baseY = cy - r * 0.96; break;
-    case 'colosseum': baseY = cy - r * 0.58; break;
-    case 'yurt':     baseY = cy - r * 0.92; break;
-    case 'sphinx':   baseY = cy - r * 0.83; break;
+  // Battlements: 5 merlons on top
+  const mw = r * 0.18, mh = r * 0.2;
+  c.fillStyle = color;
+  for (let i = 0; i < 5; i++) {
+    const mx = x - r + r * 0.15 + i * (2 * r * 0.7 / 4) - mw / 2;
+    c.fillRect(mx, top - mh, mw, mh);
   }
-  const staffX = cx - r * 0.04;
-  const tipY = baseY - r * 0.5;
-  return {
-    pole: `M${f(staffX)},${f(baseY)} L${f(staffX)},${f(tipY)}`,
-    flag: `${f(staffX)},${f(tipY)} ${f(staffX + r * 0.5)},${f(tipY + r * 0.22)} ${f(staffX)},${f(tipY + r * 0.44)}`,
-  };
-}
 
-// ── Castle tower silhouette path (default / neutral) ─────────────────────────
-function castleOutlinePath(cx: number, cy: number, r: number): string {
-  const f = (n: number) => n.toFixed(1);
-  const ml  = r * 0.30;
-  const mw  = r * 0.18;
-  const bot  = cy + r * 0.52;
-  const wL   = cx - r * 1.05;
-  const wR   = cx + r * 1.05;
-  const wTop = cy - r * 0.08;
-  const tW   = r * 0.42;
-  const tTop = wTop - r * 0.55;
-  const kL   = cx - r * 0.30;
-  const kR   = cx + r * 0.30;
-  const kTop = wTop - r * 1.08;
-  const gL   = cx - r * 0.20;
-  const gR   = cx + r * 0.20;
-  const gTop = bot - r * 0.44;
-
-  function mRow(x1: number, x2: number, baseY: number, n: number): string {
-    const step = (x2 - x1) / n;
-    let s = '';
-    for (let i = 0; i < n; i++) {
-      const mx = x1 + i * step + step * 0.18;
-      s += ` L${f(mx)},${f(baseY)} L${f(mx)},${f(baseY - ml)}`
-         + ` L${f(mx + mw)},${f(baseY - ml)} L${f(mx + mw)},${f(baseY)}`;
+  // Column lines on sides
+  c.strokeStyle = 'rgba(255,255,255,0.15)'; c.lineWidth = 1;
+  for (let side = -1; side <= 1; side += 2) {
+    for (let col = 0; col < 2; col++) {
+      const cx = x + side * (r * 0.5 + col * r * 0.2);
+      c.beginPath(); c.moveTo(cx, top + r * 0.2); c.lineTo(cx, bot); c.stroke();
     }
-    return s + ` L${f(x2)},${f(baseY)}`;
   }
 
-  let d = `M${f(wL)},${f(bot)}`;
-  d += ` L${f(wL)},${f(tTop)}`;
-  d += mRow(wL, wL + tW, tTop, 2);
-  d += ` L${f(wL + tW)},${f(wTop)}`;
-  d += mRow(wL + tW, kL, wTop, 1);
-  d += ` L${f(kL)},${f(kTop)}`;
-  d += mRow(kL, kR, kTop, 2);
-  d += ` L${f(kR)},${f(wTop)}`;
-  d += mRow(kR, wR - tW, wTop, 1);
-  d += ` L${f(wR - tW)},${f(tTop)}`;
-  d += mRow(wR - tW, wR, tTop, 2);
-  d += ` L${f(wR)},${f(bot)}`;
-  d += ` L${f(gR)},${f(bot)} L${f(gR)},${f(gTop)}`;
-  d += ` Q${f(cx)},${f(gTop - r * 0.14)} ${f(gL)},${f(gTop)}`;
-  d += ` L${f(gL)},${f(bot)} Z`;
-  return d;
+  // Outline
+  c.strokeStyle = accent; c.lineWidth = 1.5;
+  c.beginPath(); c.arc(x, top + (bot - top) * 0.3, r, Math.PI, 0);
+  c.lineTo(x + r, bot); c.lineTo(x - r, bot); c.closePath(); c.stroke();
+
+  // Silver accent ledge
+  c.strokeStyle = '#C0C0C0'; c.lineWidth = 1; c.globalAlpha = 0.4;
+  c.beginPath(); c.moveTo(x - r, top + (bot - top) * 0.25); c.lineTo(x + r, top + (bot - top) * 0.25); c.stroke();
+  c.globalAlpha = 1;
 }
 
-function castleKeepFlag(cx: number, cy: number, r: number): { pole: string; flag: string } {
-  const keepMerlonTop = (cy - r * 0.08) - r * 1.08 - r * 0.30;
-  const staffX = cx - r * 0.04;
-  const tipY = keepMerlonTop - r * 0.50;
-  return {
-    pole: `M${staffX},${keepMerlonTop} L${staffX},${tipY}`,
-    flag: `${staffX},${tipY} ${staffX + r * 0.50},${tipY + r * 0.22} ${staffX},${tipY + r * 0.44}`,
-  };
+function drawYurt(c: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, accent: string) {
+  const wallW = r * 0.9, wallBot = y + r * 0.48, peak = y - r * 0.95;
+
+  // Dome body
+  c.beginPath(); c.moveTo(x - wallW, wallBot); c.lineTo(x - wallW, y);
+  c.bezierCurveTo(x - wallW, peak + r * 0.3, x, peak, x, peak);
+  c.bezierCurveTo(x, peak, x + wallW, peak + r * 0.3, x + wallW, y);
+  c.lineTo(x + wallW, wallBot); c.closePath();
+  c.fillStyle = color; c.fill();
+  c.strokeStyle = accent; c.lineWidth = 1.5; c.stroke();
+
+  // Lattice crosshatch pattern
+  c.strokeStyle = 'rgba(0,0,0,0.12)'; c.lineWidth = 0.8;
+  const steps = 5;
+  for (let i = 1; i < steps; i++) {
+    const frac = i / steps;
+    // Horizontal bands
+    const ly = peak + (wallBot - peak) * frac;
+    const hw = wallW * Math.min(1, frac * 1.3);
+    c.beginPath(); c.moveTo(x - hw, ly); c.lineTo(x + hw, ly); c.stroke();
+  }
+  // Diagonal lines for lattice
+  c.globalAlpha = 0.08;
+  for (let d = -2; d <= 2; d++) {
+    const dx = d * r * 0.25;
+    c.beginPath(); c.moveTo(x + dx - r * 0.3, peak + r * 0.3);
+    c.lineTo(x + dx + r * 0.3, wallBot); c.stroke();
+    c.beginPath(); c.moveTo(x + dx + r * 0.3, peak + r * 0.3);
+    c.lineTo(x + dx - r * 0.3, wallBot); c.stroke();
+  }
+  c.globalAlpha = 1;
+
+  // Door arch
+  c.fillStyle = 'rgba(0,0,0,0.35)';
+  c.beginPath(); c.arc(x, wallBot - r * 0.18, r * 0.15, Math.PI, 0);
+  c.lineTo(x + r * 0.15, wallBot); c.lineTo(x - r * 0.15, wallBot); c.closePath(); c.fill();
+
+  // Rope/tension lines from finial to base edges (3 each side)
+  c.strokeStyle = accent; c.lineWidth = 0.8; c.globalAlpha = 0.3;
+  for (let side = -1; side <= 1; side += 2) {
+    for (let rope = 0; rope < 3; rope++) {
+      const bx = x + side * (wallW * 0.3 + rope * wallW * 0.25);
+      c.beginPath(); c.moveTo(x, peak); c.lineTo(bx, wallBot); c.stroke();
+    }
+  }
+  c.globalAlpha = 1;
+
+  // Pointed finial on top
+  c.fillStyle = '#FFCC44';
+  c.beginPath(); c.moveTo(x, peak - 5); c.lineTo(x - 2, peak); c.lineTo(x + 2, peak); c.closePath(); c.fill();
+  c.beginPath(); c.arc(x, peak - 5, 2, 0, TWO_PI); c.fill();
 }
 
-// ── Empire unit shape renderers ───────────────────────────────────────────────
-function renderScarabUnit(bx: number, by: number, angle: number, sz: number, color: string): React.ReactElement {
+function drawSphinx(c: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, accent: string) {
+  // Reclining lion body with raised head
+  const bodyL = x - r * 0.9, bodyR = x + r * 0.9;
+  const bodyTop = y + r * 0.05, bodyBot = y + r * 0.48;
+  const headX = x + r * 0.5, headTop = y - r * 0.85;
+
+  // Lion body (elongated)
+  c.beginPath();
+  c.moveTo(bodyL, bodyBot); // rear
+  c.lineTo(bodyL, bodyTop + r * 0.2);
+  c.quadraticCurveTo(bodyL + r * 0.3, bodyTop, x, bodyTop);
+  // Neck rise
+  c.lineTo(headX - r * 0.15, bodyTop);
+  c.lineTo(headX - r * 0.15, headTop + r * 0.3);
+  // Head + headdress (nemes)
+  c.lineTo(headX - r * 0.35, headTop);
+  c.lineTo(headX + r * 0.35, headTop);
+  c.lineTo(headX + r * 0.35, headTop + r * 0.5);
+  c.lineTo(headX + r * 0.15, bodyTop + r * 0.1);
+  c.lineTo(bodyR, bodyTop + r * 0.2);
+  c.lineTo(bodyR, bodyBot);
+  c.closePath();
+  c.fillStyle = color; c.fill();
+  c.strokeStyle = accent; c.lineWidth = 1.5; c.stroke();
+
+  // Headdress lines (nemes stripes)
+  c.strokeStyle = '#FFD700'; c.lineWidth = 0.8; c.globalAlpha = 0.4;
+  for (let i = 1; i <= 3; i++) {
+    const hy = headTop + i * r * 0.12;
+    c.beginPath(); c.moveTo(headX - r * 0.32, hy); c.lineTo(headX + r * 0.32, hy); c.stroke();
+  }
+  c.globalAlpha = 1;
+
+  // Extended paw
+  c.fillStyle = color;
+  c.fillRect(bodyL - r * 0.15, bodyBot - r * 0.12, r * 0.35, r * 0.12);
+  c.strokeStyle = accent; c.lineWidth = 1;
+  c.strokeRect(bodyL - r * 0.15, bodyBot - r * 0.12, r * 0.35, r * 0.12);
+
+  // Eye
+  c.fillStyle = '#FFD700';
+  c.beginPath(); c.arc(headX + r * 0.05, headTop + r * 0.2, 2, 0, TWO_PI); c.fill();
+}
+
+function drawTorii(c: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, accent: string) {
+  const bot = y + r * 0.48, pillarW = r * 0.15;
+  const topBeam = y - r * 0.7, midBeam = y - r * 0.35;
+  const gateW = r * 0.85;
+
+  // Two pillars
+  c.fillStyle = color;
+  c.fillRect(x - gateW - pillarW / 2, midBeam, pillarW, bot - midBeam);
+  c.fillRect(x + gateW - pillarW / 2, midBeam, pillarW, bot - midBeam);
+
+  // Top beam (curved upward at edges — iconic torii shape)
+  c.beginPath();
+  c.moveTo(x - gateW - r * 0.2, topBeam + r * 0.08);
+  c.quadraticCurveTo(x, topBeam - r * 0.1, x + gateW + r * 0.2, topBeam + r * 0.08);
+  c.lineTo(x + gateW + r * 0.2, topBeam + r * 0.18);
+  c.quadraticCurveTo(x, topBeam + r * 0.02, x - gateW - r * 0.2, topBeam + r * 0.18);
+  c.closePath();
+  c.fillStyle = color; c.fill();
+  c.strokeStyle = accent; c.lineWidth = 1; c.stroke();
+
+  // Middle crossbeam
+  c.fillStyle = color;
+  c.fillRect(x - gateW, midBeam, gateW * 2, r * 0.1);
+  c.strokeStyle = accent; c.lineWidth = 0.8;
+  c.strokeRect(x - gateW, midBeam, gateW * 2, r * 0.1);
+
+  // Pillar outlines
+  c.strokeStyle = accent; c.lineWidth = 1;
+  c.strokeRect(x - gateW - pillarW / 2, midBeam, pillarW, bot - midBeam);
+  c.strokeRect(x + gateW - pillarW / 2, midBeam, pillarW, bot - midBeam);
+
+  // Small roof cap
+  c.fillStyle = accent;
+  c.beginPath(); c.arc(x, topBeam - r * 0.05, 2.5, 0, TWO_PI); c.fill();
+}
+
+function drawCastle(c: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, accent: string) {
+  const bot = y + r * 0.52, wL = x - r, wR = x + r, wTop = y - r * 0.08;
+  const kTop = wTop - r * 1.08, kL = x - r * 0.3, kR = x + r * 0.3;
+
+  c.fillStyle = color;
+  // Main wall
+  c.fillRect(wL, wTop, wR - wL, bot - wTop);
+  // Keep tower
+  c.fillRect(kL, kTop, kR - kL, wTop - kTop);
+  // Side towers
+  c.fillRect(wL, wTop - r * 0.55, r * 0.42, r * 0.55);
+  c.fillRect(wR - r * 0.42, wTop - r * 0.55, r * 0.42, r * 0.55);
+
+  // Battlements on keep (5 merlons)
+  const mw = r * 0.12, ml = r * 0.18;
+  for (let i = 0; i < 5; i++) {
+    const mx = kL + (kR - kL) * (i / 4) - mw / 2;
+    c.fillRect(mx, kTop - ml, mw, ml);
+  }
+  // Battlements on side towers
+  for (let side = 0; side < 2; side++) {
+    const tL = side === 0 ? wL : wR - r * 0.42;
+    for (let i = 0; i < 3; i++) {
+      const mx = tL + r * 0.42 * (i / 2) - mw / 2;
+      c.fillRect(mx, wTop - r * 0.55 - ml, mw, ml);
+    }
+  }
+
+  // Arrow slit window
+  c.fillStyle = 'rgba(0,0,0,0.45)';
+  c.fillRect(x - 1.5, kTop + r * 0.15, 3, r * 0.35);
+  c.fillRect(x - 4, kTop + r * 0.25, 8, 3);
+
+  // Stone texture: subtle darker lines
+  c.strokeStyle = 'rgba(0,0,0,0.12)'; c.lineWidth = 0.5;
+  for (let sy = wTop + r * 0.15; sy < bot; sy += r * 0.2) {
+    c.beginPath(); c.moveTo(wL, sy); c.lineTo(wR, sy); c.stroke();
+  }
+
+  // Gate arch
+  c.fillStyle = 'rgba(0,0,0,0.4)';
+  c.beginPath(); c.arc(x, bot - r * 0.3, r * 0.18, Math.PI, 0);
+  c.lineTo(x + r * 0.18, bot); c.lineTo(x - r * 0.18, bot); c.closePath(); c.fill();
+
+  c.strokeStyle = accent; c.lineWidth = 1; c.globalAlpha = 0.6;
+  c.strokeRect(wL, wTop, wR - wL, bot - wTop); c.globalAlpha = 1;
+}
+
+// ── Node type icons ──────────────────────────────────────────────────────────
+function drawNodeIcon(c: CanvasRenderingContext2D, x: number, y: number, r: number, nodeType: NodeType) {
+  const iy = y - r - 14;
+  c.fillStyle = 'rgba(255,255,240,0.85)'; c.strokeStyle = 'rgba(255,255,240,0.85)'; c.lineWidth = 1.5;
+  switch (nodeType) {
+    case 'fortress':
+      c.beginPath(); c.moveTo(x - 7, iy); c.lineTo(x, iy - 8); c.lineTo(x + 7, iy); c.lineTo(x, iy + 8); c.closePath(); c.fill(); break;
+    case 'barracks':
+      c.beginPath(); c.moveTo(x, iy - 8); c.lineTo(x, iy + 6); c.stroke();
+      c.beginPath(); c.moveTo(x - 5, iy - 2); c.lineTo(x + 5, iy - 2); c.stroke(); break;
+    case 'capital':
+      c.fillStyle = '#FFD700';
+      c.beginPath(); c.moveTo(x - 9, iy + 3); c.lineTo(x - 9, iy - 1); c.lineTo(x - 4, iy + 1);
+      c.lineTo(x, iy - 7); c.lineTo(x + 4, iy + 1); c.lineTo(x + 9, iy - 1); c.lineTo(x + 9, iy + 3); c.closePath(); c.fill(); break;
+    case 'watchtower':
+      c.beginPath(); c.ellipse(x, iy, 7, 4.5, 0, 0, TWO_PI); c.stroke();
+      c.beginPath(); c.arc(x, iy, 2.5, 0, TWO_PI); c.fill(); break;
+    case 'ruins':
+      c.globalAlpha = 0.45;
+      c.fillRect(x - 7, iy - 4, 5, 8); c.fillRect(x - 1, iy - 2, 4, 6); c.fillRect(x + 4, iy - 5, 3, 9);
+      c.globalAlpha = 1; break;
+  }
+}
+
+// ── Unit shapes ──────────────────────────────────────────────────────────────
+function drawRotatedPoly(c: CanvasRenderingContext2D, bx: number, by: number, angle: number, pts: number[][], color: string) {
   const cos = Math.cos(angle), sin = Math.sin(angle);
-  const perp = angle + Math.PI / 2;
-  const pc = Math.cos(perp), ps = Math.sin(perp);
-  const f = (n: number) => n.toFixed(1);
-  // Wing tip coords
-  const wLx = bx + pc * sz * 2.6, wLy = by + ps * sz * 2.6;
-  const wRx = bx - pc * sz * 2.6, wRy = by - ps * sz * 2.6;
-  // Wing bend through a forward point
-  const bendX = bx + cos * sz * 0.7, bendY = by + sin * sz * 0.7;
-  const wPath = `M${f(wLx)},${f(wLy)} Q${f(bendX)},${f(bendY)} ${f(wRx)},${f(wRy)}`;
-  // Oval body
-  const bodyPts: [number, number][] = [
-    [sz * 1.55, 0], [sz * 0.85, sz * 0.9],
-    [-sz * 0.5, sz * 0.8], [-sz * 0.7, 0],
-    [-sz * 0.5, -sz * 0.8], [sz * 0.85, -sz * 0.9],
-  ];
-  const bodyPoints = bodyPts.map(([px, py]) =>
-    `${f(bx + px * cos - py * sin)},${f(by + px * sin + py * cos)}`
-  ).join(' ');
-  return (
-    <G>
-      <Path d={wPath} stroke={color} strokeWidth={sz * 0.38} fill="none" opacity={0.72} />
-      <Polygon points={bodyPoints} fill={color} />
-    </G>
-  );
+  c.beginPath();
+  for (let i = 0; i < pts.length; i++) {
+    const px = pts[i][0], py = pts[i][1];
+    const rx = bx + px * cos - py * sin, ry = by + px * sin + py * cos;
+    if (i === 0) c.moveTo(rx, ry); else c.lineTo(rx, ry);
+  }
+  c.closePath(); c.fillStyle = color; c.fill();
 }
 
-function renderShieldUnit(bx: number, by: number, angle: number, sz: number, color: string): React.ReactElement {
-  const cos = Math.cos(angle), sin = Math.sin(angle);
-  const f = (n: number) => n.toFixed(1);
-  // Scutum (rectangular shield with domed top)
-  const pts: [number, number][] = [
-    [sz * 1.7, -sz * 0.85], [sz * 2.1, 0], [sz * 1.7, sz * 0.85],
-    [-sz * 1.1, sz * 0.85], [-sz * 1.1, -sz * 0.85],
-  ];
-  const points = pts.map(([px, py]) =>
-    `${f(bx + px * cos - py * sin)},${f(by + px * sin + py * cos)}`
-  ).join(' ');
-  // Boss (center stud)
-  const bossCX = bx + cos * sz * 0.4, bossCY = by + sin * sz * 0.4;
-  return (
-    <G>
-      <Polygon points={points} fill={color} />
-      <Circle cx={bossCX} cy={bossCY} r={sz * 0.45} fill="rgba(255,255,255,0.22)" />
-    </G>
-  );
+// Scarab: golden oval with wing lines
+const SCARAB_PTS = [[6, 0], [3.5, 4], [-3, 3.5], [-4, 0], [-3, -3.5], [3.5, -4]];
+// Shield: rectangle with rounded top
+const SHIELD_PTS = [[5, -4], [5, 4], [-4, 4], [-5, 2], [-5, -2], [-4, -4]];
+// Horse: teardrop pointing forward
+const HORSE_PTS = [[8, 0], [3, 4.5], [-4, 4], [-6, 0], [-4, -4], [3, -4.5]];
+// Ankh: simplified cross with loop
+const ANKH_PTS = [[0, -7], [2.5, -5], [2.5, -2], [5, -2], [5, 2], [2.5, 2], [2.5, 6], [-2.5, 6], [-2.5, 2], [-5, 2], [-5, -2], [-2.5, -2], [-2.5, -5]];
+// Default troop
+const TROOP_PTS = [[6, 0], [3.5, 4.5], [-3, 4], [-4, 0], [-3, -4], [3.5, -4.5]];
+
+function drawUnit(c: CanvasRenderingContext2D, bx: number, by: number, angle: number, shape: string | undefined, color: string) {
+  switch (shape) {
+    case 'scarab': {
+      drawRotatedPoly(c, bx, by, angle, SCARAB_PTS, color);
+      // Wing lines
+      const cos = Math.cos(angle), sin = Math.sin(angle);
+      c.strokeStyle = 'rgba(255,215,0,0.5)'; c.lineWidth = 0.8;
+      for (let side = -1; side <= 1; side += 2) {
+        const wx = bx + (3 * cos - side * 3 * sin);
+        const wy = by + (3 * sin + side * 3 * cos);
+        const wx2 = bx + (-1 * cos - side * 5 * sin);
+        const wy2 = by + (-1 * sin + side * 5 * cos);
+        c.beginPath(); c.moveTo(wx, wy); c.lineTo(wx2, wy2); c.stroke();
+      }
+      // Head circle
+      c.beginPath();
+      c.arc(bx + Math.cos(angle) * 5, by + Math.sin(angle) * 5, 1.5, 0, TWO_PI);
+      c.fillStyle = '#FFD700'; c.fill();
+      break;
+    }
+    case 'shield': {
+      drawRotatedPoly(c, bx, by, 0, SHIELD_PTS, color); // Shields don't rotate
+      // Boss dot in center
+      c.beginPath(); c.arc(bx, by, 1.5, 0, TWO_PI);
+      c.fillStyle = '#C0C0C0'; c.fill();
+      // Silver rim
+      c.strokeStyle = '#C0C0C0'; c.lineWidth = 0.8;
+      drawRotatedPoly(c, bx, by, 0, SHIELD_PTS, color);
+      break;
+    }
+    case 'horse': {
+      drawRotatedPoly(c, bx, by, angle, HORSE_PTS, color);
+      // Head bump
+      const headX = bx + Math.cos(angle) * 7;
+      const headY = by + Math.sin(angle) * 7;
+      c.beginPath(); c.arc(headX, headY, 2, 0, TWO_PI);
+      c.fillStyle = color; c.fill();
+      break;
+    }
+    case 'ankh':
+      drawRotatedPoly(c, bx, by, 0, ANKH_PTS, color);
+      // Loop at top
+      c.beginPath(); c.arc(bx, by - 6, 3, 0, TWO_PI);
+      c.strokeStyle = color; c.lineWidth = 1.5; c.stroke();
+      break;
+    case 'katana': {
+      // Blade (rotated to face direction)
+      const kcos = Math.cos(angle), ksin = Math.sin(angle);
+      c.strokeStyle = color; c.lineWidth = 2.5;
+      c.beginPath();
+      c.moveTo(bx - kcos * 6, by - ksin * 6);
+      c.lineTo(bx + kcos * 8, by + ksin * 8);
+      c.stroke();
+      // Slight curve at tip
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.moveTo(bx + kcos * 8, by + ksin * 8);
+      c.quadraticCurveTo(
+        bx + kcos * 10 + ksin * 2, by + ksin * 10 - kcos * 2,
+        bx + kcos * 9, by + ksin * 9
+      );
+      c.stroke();
+      // Guard (tsuba) — small perpendicular line
+      c.strokeStyle = '#FFFFFF'; c.lineWidth = 2;
+      c.beginPath();
+      c.moveTo(bx - ksin * 3, by + kcos * 3);
+      c.lineTo(bx + ksin * 3, by - kcos * 3);
+      c.stroke();
+      break;
+    }
+    default: drawRotatedPoly(c, bx, by, angle, TROOP_PTS, color); break;
+  }
 }
 
-function renderHorseUnit(bx: number, by: number, angle: number, sz: number, color: string): React.ReactElement {
-  const cos = Math.cos(angle), sin = Math.sin(angle);
-  const f = (n: number) => n.toFixed(1);
-  // Teardrop pointing forward
-  const pts: [number, number][] = [
-    [sz * 2.2, 0],
-    [sz * 0.75, sz * 1.0], [-sz * 0.8, sz * 0.88],
-    [-sz * 1.4, 0],
-    [-sz * 0.8, -sz * 0.88], [sz * 0.75, -sz * 1.0],
-  ];
-  const points = pts.map(([px, py]) =>
-    `${f(bx + px * cos - py * sin)},${f(by + px * sin + py * cos)}`
-  ).join(' ');
-  return <Polygon points={points} fill={color} />;
+// ── V-Formation positions ────────────────────────────────────────────────────
+// Pre-computed formation offsets (relative to center, facing right)
+const V_FORMATION: number[][] = [
+  [0, 0],       // Lead
+  [-8, -8],     // Left wing
+  [-8, 8],      // Right wing
+  [-16, -12],   // Third row left
+  [-16, 12],    // Third row right
+  [-24, -6],    // Staggered
+  [-24, 6],
+  [-30, 0],
+];
+
+// ── VFX Particle type ────────────────────────────────────────────────────────
+interface VFXParticle {
+  active: boolean;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  alpha: number;
+  color: string;
+  life: number;
+  maxLife: number;
+  gravity: number;
+  type: 'spark' | 'ember' | 'ring';
+  radius: number;
+  maxRadius: number;
+  strokeWidth: number;
 }
 
-function renderAnkhUnit(bx: number, by: number, sz: number, color: string): React.ReactElement {
-  const f = (n: number) => n.toFixed(1);
-  // Always screen-upright ankh
-  const shaftW = sz * 0.44;
-  const crossY = by - sz * 0.4;
-  const crossHalfW = sz * 1.55;
-  const shaftBot = by + sz * 1.8;
-  const loopCY = by - sz * 1.32;
-  const loopR = sz * 0.82;
-  const strokeW = sz * 0.82;
-  // Vertical shaft
-  const shaftPts = [
-    `${f(bx + shaftW)},${f(crossY + sz * 0.35)}`,
-    `${f(bx + shaftW)},${f(shaftBot)}`,
-    `${f(bx - shaftW)},${f(shaftBot)}`,
-    `${f(bx - shaftW)},${f(crossY + sz * 0.35)}`,
-  ].join(' ');
-  // Crossbar
-  const crossPts = [
-    `${f(bx + crossHalfW)},${f(crossY + sz * 0.38)}`,
-    `${f(bx + crossHalfW)},${f(crossY - sz * 0.38)}`,
-    `${f(bx - crossHalfW)},${f(crossY - sz * 0.38)}`,
-    `${f(bx - crossHalfW)},${f(crossY + sz * 0.38)}`,
-  ].join(' ');
-  return (
-    <G>
-      <Polygon points={shaftPts} fill={color} />
-      <Polygon points={crossPts} fill={color} />
-      <Circle cx={bx} cy={loopCY} r={loopR} fill="none" stroke={color} strokeWidth={strokeW} />
-    </G>
-  );
+// ── Star twinkle object ──────────────────────────────────────────────────────
+interface StarObj {
+  x: number;
+  y: number;
+  size: number;
+  phase: number;
+  speed: number;
 }
 
-// ── Default troop polygon (castle/neutral) ────────────────────────────────────
-function troopPolygon(cx: number, cy: number, angle: number, sz: number): string {
-  const cos = Math.cos(angle), sin = Math.sin(angle);
-  const pts: [number, number][] = [
-    [sz * 1.6, 0], [sz * 0.9, sz * 0.95],
-    [-sz * 0.6, sz * 0.85], [-sz * 0.8, 0],
-    [-sz * 0.6, -sz * 0.85], [sz * 0.9, -sz * 0.95],
-  ];
-  return pts
-    .map(([px, py]) => `${(cx + px * cos - py * sin).toFixed(1)},${(cy + px * sin + py * cos).toFixed(1)}`)
-    .join(' ');
+// ── Firefly object ───────────────────────────────────────────────────────────
+interface FireflyObj {
+  x: number;
+  y: number;
+  phaseX: number;
+  phaseY: number;
+  freqX: number;
+  freqY: number;
+  ampX: number;
+  ampY: number;
+  baseX: number;
+  baseY: number;
 }
 
-function fleetFlagPoints(cx: number, cy: number, angle: number, sz: number): string {
-  const cos = Math.cos(angle), sin = Math.sin(angle);
-  const pts: [number, number][] = [
-    [sz * 0.8, -sz * 1.3], [sz * 0.8, -sz * 2.4], [sz * 0.8 + sz * 1.0, -sz * 1.8],
-  ];
-  return pts
-    .map(([px, py]) => `${(cx + px * cos - py * sin).toFixed(1)},${(cy + px * sin + py * cos).toFixed(1)}`)
-    .join(' ');
+// ── Cloud object ─────────────────────────────────────────────────────────────
+interface CloudObj {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  speed: number;
 }
 
-// ── Arrowhead ─────────────────────────────────────────────────────────────────
-function arrowheadPoints(x1: number, y1: number, x2: number, y2: number): string {
-  const angle = Math.atan2(y2 - y1, x2 - x1);
-  const len = 13, spread = 0.45;
-  const tip = { x: x2 - Math.cos(angle) * 4, y: y2 - Math.sin(angle) * 4 };
-  const l = { x: tip.x - Math.cos(angle - spread) * len, y: tip.y - Math.sin(angle - spread) * len };
-  const r = { x: tip.x - Math.cos(angle + spread) * len, y: tip.y - Math.sin(angle + spread) * len };
-  return `${tip.x.toFixed(1)},${tip.y.toFixed(1)} ${l.x.toFixed(1)},${l.y.toFixed(1)} ${r.x.toFixed(1)},${r.y.toFixed(1)}`;
+// ── Rain line object ─────────────────────────────────────────────────────────
+interface RainLine {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  active: boolean;
 }
 
-function bezierPathStr(x1: number, y1: number, cx: number, cy: number, x2: number, y2: number): string {
-  return `M${x1.toFixed(1)} ${y1.toFixed(1)} Q${cx.toFixed(1)} ${cy.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
-}
-
-// ── Props ─────────────────────────────────────────────────────────────────────
+// ── Props ────────────────────────────────────────────────────────────────────
 interface Props {
   width: number;
   height: number;
@@ -375,62 +565,72 @@ export default function GameCanvas({
   playerEmpire, aiEmpire,
 }: Props) {
   const { state } = useGame();
-  const { planets, fleets, particles, conquestFlashes, impactFlashes } = state;
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const bgCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rafRef = useRef(0);
+  const fpsRef = useRef({ frames: 0, fps: 60, lastTime: performance.now() });
+  const perfRef = useRef({ maxParticles: MAX_PARTICLES_HIGH, maxTrail: MAX_TRAIL_HIGH, maxFogWisps: MAX_FOG_WISPS_HIGH, degraded: false });
+  // Track last node scale for smooth lerping
+  const nodeScaleCache = useRef<Map<number, number>>(new Map());
+  // Ambient motes (8 tiny floating particles)
+  const ambientMotes = useRef<{ x: number; y: number; vx: number; vy: number; alpha: number }[]>([]);
+  // Selection cascade timing
+  const selCascadeRef = useRef<number>(0);
+  // Prevent double-dispatch in ALL mode (grant + release)
+  const allDispatchedRef = useRef(false);
 
-  const planetsRef = useRef(planets); planetsRef.current = planets;
+  // Refs for latest props/state
+  const stateRef = useRef(state); stateRef.current = state;
+  const planetsRef = useRef(state.planets); planetsRef.current = state.planets;
   const selIdRef = useRef<number | null>(null); selIdRef.current = selectedPlanetId;
-  const allSelectedRef = useRef(false); allSelectedRef.current = allSelected;
+  const allSelRef = useRef(false); allSelRef.current = allSelected;
+  const ptrRef = useRef(pointerPos); ptrRef.current = pointerPos;
+  const pEmpRef = useRef(playerEmpire); pEmpRef.current = playerEmpire;
+  const aEmpRef = useRef(aiEmpire); aEmpRef.current = aiEmpire;
+
+  // Callback refs
   const selectRef = useRef(onSelectPlanet); selectRef.current = onSelectPlanet;
   const sendRef = useRef(onSendFleet); sendRef.current = onSendFleet;
   const sendAllRef = useRef(onSendFleetFromAll); sendAllRef.current = onSendFleetFromAll;
   const clearAllRef = useRef(onClearAll); clearAllRef.current = onClearAll;
   const moveRef = useRef(onPointerMove); moveRef.current = onPointerMove;
 
-  // ── Screen shake ──────────────────────────────────────────────────────────
-  const shakeX = useRef(new Animated.Value(0)).current;
-  const shakeY = useRef(new Animated.Value(0)).current;
-  const prevCFLen = useRef(0);
-  useEffect(() => {
-    const len = conquestFlashes.length;
-    if (len > prevCFLen.current) {
-      prevCFLen.current = len;
-      const cf = conquestFlashes[len - 1];
-      const mag = cf?.owner === 1 ? 8 : 5;
-      Animated.parallel([
-        Animated.sequence([
-          Animated.timing(shakeX, { toValue: mag,        duration: 40, useNativeDriver: false }),
-          Animated.timing(shakeX, { toValue: -mag * 0.6, duration: 35, useNativeDriver: false }),
-          Animated.timing(shakeX, { toValue: mag * 0.3,  duration: 28, useNativeDriver: false }),
-          Animated.timing(shakeX, { toValue: 0,          duration: 22, useNativeDriver: false }),
-        ]),
-        Animated.sequence([
-          Animated.timing(shakeY, { toValue: -mag * 0.5, duration: 40, useNativeDriver: false }),
-          Animated.timing(shakeY, { toValue: mag * 0.3,  duration: 35, useNativeDriver: false }),
-          Animated.timing(shakeY, { toValue: 0,          duration: 50, useNativeDriver: false }),
-        ]),
-      ]).start();
-    }
-  }, [conquestFlashes.length]);
-
-  // ── Capture crossfade state ───────────────────────────────────────────────
-  const prevOwnersRef = useRef<Map<number, 0|1|2>>(new Map());
-  const captureTransRef = useRef<Map<number, { prevOwner: 0|1|2; t: number }>>(new Map());
-
-  // ── Empire helpers ────────────────────────────────────────────────────────
-  const empireOf = (owner: 0|1|2): EmpireConfig | null => {
-    if (owner === 1) return playerEmpire ?? null;
-    if (owner === 2) return aiEmpire ?? null;
+  // Color helpers
+  const eColor = useCallback((owner: 0|1|2): string => {
+    if (owner === 1) return pEmpRef.current?.nodeColor ?? '#44EE66';
+    if (owner === 2) return aEmpRef.current?.nodeColor ?? '#EE3344';
+    return '#8B7355'; // Neutral: muted tan
+  }, []);
+  const eGlow = useCallback((owner: 0|1|2): string => {
+    if (owner === 1) return pEmpRef.current?.glowRgb ? `rgba(${pEmpRef.current.glowRgb},` : 'rgba(68,238,102,';
+    if (owner === 2) return aEmpRef.current?.glowRgb ? `rgba(${aEmpRef.current.glowRgb},` : 'rgba(238,51,68,';
+    return 'rgba(139,115,85,';
+  }, []);
+  const eAccent = useCallback((owner: 0|1|2): string => {
+    if (owner === 1) return pEmpRef.current?.accentColor ?? '#228844';
+    if (owner === 2) return aEmpRef.current?.accentColor ?? '#882222';
+    return '#665544';
+  }, []);
+  const eUnitColor = useCallback((owner: 0|1|2): string => {
+    if (owner === 1) return pEmpRef.current?.unitColor ?? '#44EE66';
+    if (owner === 2) return aEmpRef.current?.unitColor ?? '#EE3344';
+    return '#8B7355';
+  }, []);
+  const eShape = useCallback((owner: 0|1|2): NodeShape | null => {
+    if (owner === 1) return pEmpRef.current?.nodeShape ?? null;
+    if (owner === 2) return aEmpRef.current?.nodeShape ?? null;
     return null;
-  };
-  const effectiveColor = (owner: 0|1|2): string => empireOf(owner)?.nodeColor ?? ownerColor(owner);
-  const effectiveGlow  = (owner: 0|1|2): string => empireOf(owner)?.glowRgb ?? ownerGlow(owner);
-  const effectiveGlowDark = (owner: 0|1|2): string => empireOf(owner)?.glowDarkRgb ?? ownerGlowDark(owner);
-  const effectiveStone = (owner: 0|1|2): string => empireOf(owner)?.accentColor ?? ownerStone(owner);
-  const effectiveUnitColor = (owner: 0|1|2): string => empireOf(owner)?.unitColor ?? ownerColor(owner);
+  }, []);
+  const eUnitShape = useCallback((owner: 0|1|2): string | undefined => {
+    if (owner === 1) return pEmpRef.current?.unitShape;
+    if (owner === 2) return aEmpRef.current?.unitShape;
+    return undefined;
+  }, []);
 
   const getPlanetAt = useCallback((x: number, y: number) =>
     planetsRef.current.find(p => Math.hypot(p.x - x, p.y - y) < p.radius + HIT_EXTRA), []);
 
+  // ── Touch handling via PanResponder ────────────────────────────────────────
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -438,551 +638,1347 @@ export default function GameCanvas({
       onPanResponderGrant: e => {
         const { locationX: x, locationY: y } = e.nativeEvent;
         moveRef.current(x, y);
-        if (allSelectedRef.current) return;
-        if (selIdRef.current === null) {
-          const planet = getPlanetAt(x, y);
+        // ALL mode: dispatch from all owned nodes on tap
+        if (allSelRef.current) {
+          const target = getPlanetAt(x, y);
+          if (target) {
+            sendAllRef.current(target.id);
+            clearAllRef.current();
+            allDispatchedRef.current = true; // prevent double dispatch in release
+          }
+          return;
+        }
+        allDispatchedRef.current = false;
+        const selId = selIdRef.current;
+        const planet = getPlanetAt(x, y);
+        if (selId === null) {
+          // Nothing selected — select own planet
           if (planet?.owner === 1) selectRef.current(planet.id);
+        } else {
+          // Already have a selection — tap on a different planet sends fleet
+          if (planet && planet.id !== selId) {
+            sendRef.current(selId, planet.id);
+            // Chain-select if we tapped our own planet, otherwise deselect
+            selectRef.current(planet.owner === 1 ? planet.id : null);
+          }
+          // Tapping same planet or empty space is handled in release
         }
       },
       onPanResponderMove: e => moveRef.current(e.nativeEvent.locationX, e.nativeEvent.locationY),
       onPanResponderRelease: e => {
         const { locationX: x, locationY: y } = e.nativeEvent;
-        if (allSelectedRef.current) {
-          const target = getPlanetAt(x, y);
-          if (target && target.owner !== 1) { sendAllRef.current(target.id); clearAllRef.current(); }
+        // ALL mode: also handle release (for drag-to-target flow)
+        if (allSelRef.current) {
+          if (!allDispatchedRef.current) {
+            const target = getPlanetAt(x, y);
+            if (target) {
+              sendAllRef.current(target.id);
+              clearAllRef.current();
+            }
+          }
+          allDispatchedRef.current = false;
           return;
         }
         const selId = selIdRef.current;
         const target = getPlanetAt(x, y);
         if (selId !== null) {
           if (target && target.id !== selId) {
+            // Drag-release on different planet: send fleet
             sendRef.current(selId, target.id);
             selectRef.current(target.owner === 1 ? target.id : null);
-          } else if (!target) {
-            selectRef.current(null);
+          } else if (target && target.id === selId) {
+            // Released on same planet: keep it selected (tap-tap flow)
           } else {
+            // Released on empty space: deselect
             selectRef.current(null);
           }
-        } else {
-          if (!target || target.owner !== 1) selectRef.current(null);
         }
       },
       onPanResponderTerminate: () => { selectRef.current(null); },
     })
   ).current;
 
-  const playerPlanets = planets.filter(p => p.owner === 1);
-  const visiblePlanets = planets.filter(p => p.owner === 1 || isVisible(p.x, p.y, playerPlanets));
-  const ghostPlanets = planets.filter(
-    p => p.owner !== 1 && !isVisible(p.x, p.y, playerPlanets) && isGhost(p.x, p.y, playerPlanets)
-  );
-  const selectedPlanet = planets.find(p => p.id === selectedPlanetId);
+  // ── Draw static background (offscreen canvas, once) ────────────────────────
+  const drawBg = useCallback((c: CanvasRenderingContext2D, w: number, h: number) => {
+    // Layer 1: Deep dark gradient with green-black tint
+    const baseGrad = c.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.7);
+    baseGrad.addColorStop(0, '#141f14');
+    baseGrad.addColorStop(1, '#0a0f0a');
+    c.fillStyle = baseGrad; c.fillRect(0, 0, w, h);
 
-  const now = Date.now();
-  const dashOffset = -((now / 38) % 15);
-  const selectPulse = 1 + 0.18 * Math.sin(now / 190);
-  const warnPulse = 1 + 0.14 * Math.sin(now / 145);
-  const atmospherePulse = 1 + 0.04 * Math.sin(now / 2200);
-
-  // Detect owner changes → start crossfade
-  planets.forEach(p => {
-    const prev = prevOwnersRef.current.get(p.id);
-    if (prev !== undefined && prev !== p.owner) {
-      captureTransRef.current.set(p.id, { prevOwner: prev, t: 0 });
+    // Layer 2: Terrain texture — 200 tiny dots + 15 larger
+    c.fillStyle = 'rgba(255,240,200,0.15)';
+    for (let i = 0; i < 200; i++) {
+      c.beginPath(); c.arc(Math.random() * w, Math.random() * h, 0.5, 0, TWO_PI); c.fill();
     }
-    prevOwnersRef.current.set(p.id, p.owner);
-  });
-  captureTransRef.current.forEach((trans, id) => {
-    trans.t = Math.min(1, trans.t + (1 / 60) * 2.0);
-    if (trans.t >= 1) captureTransRef.current.delete(id);
-  });
+    c.fillStyle = 'rgba(255,240,200,0.08)';
+    for (let i = 0; i < 15; i++) {
+      c.beginPath(); c.arc(Math.random() * w, Math.random() * h, 1.2, 0, TWO_PI); c.fill();
+    }
 
-  // Fog blob positions
-  // Fog drift — 1.5× speed (time divisors ÷ 1.5)
-  const fog1x = width * 0.28 + 55 * Math.sin(now / 6133);
-  const fog1y = height * 0.38 + 38 * Math.cos(now / 7867);
-  const fog2x = width * 0.71 + 48 * Math.cos(now / 8267);
-  const fog2y = height * 0.62 + 44 * Math.sin(now / 5867);
-  const fog3x = width * 0.50 + 60 * Math.sin(now / 7067 + 2.1);
-  const fog3y = height * 0.22 + 32 * Math.cos(now / 6533 + 1.4);
-  const fog4x = width * 0.15 + 40 * Math.sin(now / 8733 + 0.8);
-  const fog4y = height * 0.70 + 35 * Math.cos(now / 6867 + 2.5);
-
-  const DOT_SPACING = 44;
-  const dotGrid = useMemo(() => {
-    const dots: { x: number; y: number }[] = [];
-    for (let gx = DOT_SPACING; gx < width; gx += DOT_SPACING) {
-      for (let gy = DOT_SPACING; gy < height; gy += DOT_SPACING) {
-        dots.push({ x: gx, y: gy });
+    // Layer 3: Hex grid (very subtle)
+    const hexSize = 40;
+    c.strokeStyle = 'rgba(255,255,255,0.03)'; c.lineWidth = 0.5;
+    const hexH = hexSize * Math.sqrt(3);
+    for (let row = -1; row < h / hexH + 1; row++) {
+      for (let col = -1; col < w / (hexSize * 1.5) + 1; col++) {
+        const cx = col * hexSize * 1.5;
+        const cy = row * hexH + (col % 2 === 0 ? 0 : hexH / 2);
+        c.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const angle = (60 * i - 30) * DEG_TO_RAD;
+          const hx = cx + hexSize * 0.5 * Math.cos(angle);
+          const hy = cy + hexSize * 0.5 * Math.sin(angle);
+          if (i === 0) c.moveTo(hx, hy); else c.lineTo(hx, hy);
+        }
+        c.closePath(); c.stroke();
       }
     }
-    return dots;
-  }, [Math.floor(width / DOT_SPACING), Math.floor(height / DOT_SPACING)]);
 
-  const hoveredPlanet = (selectedPlanetId !== null || allSelected)
-    ? planets.find(p =>
-        (allSelected ? p.owner !== 1 : p.id !== selectedPlanetId) &&
-        Math.hypot(p.x - pointerPos.x, p.y - pointerPos.y) < p.radius + HIT_EXTRA
-      )
-    : undefined;
+    // Layer 4: Vignette
+    const vg = c.createRadialGradient(w / 2, h / 2, w * 0.25, w / 2, h / 2, w * 0.8);
+    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.5)');
+    c.fillStyle = vg; c.fillRect(0, 0, w, h);
+  }, []);
 
-  const previewUnits = selectedPlanet
-    ? Math.max(1, Math.floor(selectedPlanet.units * (state.fleetPercent / 100))) : 0;
-  const underAttackIds = new Set(fleets.filter(f => f.owner === 2).map(f => f.toId));
-  const showTargeting = pointerPos.x > 4 || pointerPos.y > 4;
+  // ── Main render loop ───────────────────────────────────────────────────────
+  useEffect(() => {
+    const gameC = canvasRef.current;
+    const bgC = bgCanvasRef.current;
+    if (!gameC || !bgC || !width || !height) return;
+
+    const dpr = Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2);
+    for (const cv of [gameC, bgC]) {
+      cv.width = width * dpr; cv.height = height * dpr;
+      cv.style.width = width + 'px'; cv.style.height = height + 'px';
+    }
+    const bgCtx = bgC.getContext('2d')!;
+    bgCtx.scale(dpr, dpr);
+    drawBg(bgCtx, width, height);
+
+    const ctx = gameC.getContext('2d')!;
+    ctx.scale(dpr, dpr);
+    ctx.imageSmoothingEnabled = false;
+
+    // Init ambient motes
+    if (ambientMotes.current.length === 0) {
+      for (let i = 0; i < 8; i++) {
+        ambientMotes.current.push({
+          x: Math.random() * width, y: Math.random() * height,
+          vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6,
+          alpha: 0.2 + Math.random() * 0.2,
+        });
+      }
+    }
+
+    // Capture transition tracking
+    const prevOwners = new Map<number, 0|1|2>();
+    const captureTrans = new Map<number, { prevOwner: 0|1|2; t: number }>();
+
+    // ── PRE-ALLOCATE VFX PARTICLE POOL (150 particles) ────────────────────
+    const VFX_POOL_SIZE = 150;
+    const VFX_POOL_LOW = 60;
+    const vfxPool: VFXParticle[] = [];
+    for (let i = 0; i < VFX_POOL_SIZE; i++) {
+      vfxPool[i] = {
+        active: false, x: 0, y: 0, vx: 0, vy: 0,
+        size: 0, alpha: 0, color: '', life: 0, maxLife: 0, gravity: 0,
+        type: 'spark', radius: 0, maxRadius: 0, strokeWidth: 0,
+      };
+    }
+    let vfxActiveCount = 0;
+
+    function spawnVFX(
+      x: number, y: number, vx: number, vy: number,
+      size: number, color: string, maxLife: number, gravity: number,
+      type: 'spark' | 'ember' | 'ring',
+      maxRadius?: number, strokeWidth?: number
+    ): void {
+      const budget = perfRef.current.degraded ? VFX_POOL_LOW : VFX_POOL_SIZE;
+      if (vfxActiveCount >= budget) return;
+      for (let i = 0; i < VFX_POOL_SIZE; i++) {
+        const p = vfxPool[i];
+        if (!p.active) {
+          p.active = true;
+          p.x = x; p.y = y; p.vx = vx; p.vy = vy;
+          p.size = size; p.alpha = 1; p.color = color;
+          p.life = 0; p.maxLife = maxLife; p.gravity = gravity;
+          p.type = type;
+          p.radius = 0;
+          p.maxRadius = maxRadius ?? 0;
+          p.strokeWidth = strokeWidth ?? 1;
+          vfxActiveCount++;
+          return;
+        }
+      }
+    }
+
+    // ── PRE-ALLOCATE STAR TWINKLE SYSTEM (30 stars) ──────────────────────
+    const stars: StarObj[] = [];
+    for (let i = 0; i < 30; i++) {
+      stars[i] = {
+        x: Math.random() * width,
+        y: Math.random() * height,
+        size: 0.5 + Math.random() * 1.5,
+        phase: Math.random() * TWO_PI,
+        speed: 1000 + Math.random() * 2000,
+      };
+    }
+
+    // ── PRE-ALLOCATE FIREFLY SYSTEM (6 fireflies) ────────────────────────
+    const fireflies: FireflyObj[] = [];
+    for (let i = 0; i < 6; i++) {
+      fireflies[i] = {
+        x: 0, y: 0,
+        phaseX: Math.random() * TWO_PI,
+        phaseY: Math.random() * TWO_PI,
+        freqX: 0.0005 + Math.random() * 0.001,
+        freqY: 0.0007 + Math.random() * 0.0008,
+        ampX: 40 + Math.random() * 80,
+        ampY: 30 + Math.random() * 60,
+        baseX: Math.random() * width,
+        baseY: Math.random() * height,
+      };
+    }
+
+    // ── PRE-ALLOCATE WEATHER SYSTEM ──────────────────────────────────────
+    const clouds: CloudObj[] = [];
+    for (let i = 0; i < 3; i++) {
+      clouds[i] = {
+        x: Math.random() * width,
+        y: 50 + Math.random() * (height * 0.4),
+        w: 150 + Math.random() * 100,
+        h: 50 + Math.random() * 40,
+        speed: 0.15 + Math.random() * 0.2,
+      };
+    }
+    const rainLines: RainLine[] = [];
+    for (let i = 0; i < 20; i++) {
+      rainLines[i] = { x: 0, y: 0, vx: 0, vy: 0, active: false };
+    }
+    let lastLightningTime = 0;
+    let nextLightningInterval = 8000 + Math.random() * 7000;
+    let lightningFlashTimer = 0;
+    let rainBurstTimer = 0;
+
+    // ── PRE-ALLOCATE departure tracking ──────────────────────────────────
+    const departureTimestamps = new Map<number, number>(); // fleetFromId -> timestamp
+    let lastFleetCount = 0;
+
+    function frame(now: number) {
+      // FPS tracking
+      const fp = fpsRef.current;
+      fp.frames++;
+      if (now - fp.lastTime >= 500) {
+        fp.fps = Math.round(fp.frames / ((now - fp.lastTime) / 1000));
+        fp.frames = 0; fp.lastTime = now;
+        // Adaptive quality
+        const perf = perfRef.current;
+        if (fp.fps < FPS_DEGRADE_THRESHOLD && !perf.degraded) {
+          perf.degraded = true;
+          perf.maxParticles = MAX_PARTICLES_LOW;
+          perf.maxTrail = MAX_TRAIL_LOW;
+          perf.maxFogWisps = MAX_FOG_WISPS_LOW;
+        } else if (fp.fps > 55 && perf.degraded) {
+          perf.degraded = false;
+          perf.maxParticles = MAX_PARTICLES_HIGH;
+          perf.maxTrail = MAX_TRAIL_HIGH;
+          perf.maxFogWisps = MAX_FOG_WISPS_HIGH;
+        }
+      }
+
+      const s = stateRef.current;
+      const { planets, fleets, particles, conquestFlashes, impactFlashes, floatingTexts, nodeHits } = s;
+      const selId = selIdRef.current;
+      const allSel = allSelRef.current;
+      const ptr = ptrRef.current;
+      const perf = perfRef.current;
+      const degraded = perf.degraded;
+
+      // ── PRE-COMPUTE LOOKUPS (O(1) instead of O(n) in hot loops) ──
+      // Planet map by ID
+      const planetMap = new Map<number, Planet>();
+      for (let i = 0; i < planets.length; i++) planetMap.set(planets[i].id, planets[i]);
+      // Under-attack sets: which planet IDs have incoming enemy fleets
+      const underAttackByEnemy = new Set<number>(); // player nodes attacked by AI
+      const underAttackByPlayer = new Set<number>(); // AI nodes attacked by player
+      const underAttackAny = new Set<number>(); // any node under attack by opposing
+      // Incoming fleet counts per target
+      const incomingUnits = new Map<number, number>(); // target ID → total incoming units
+      for (let i = 0; i < fleets.length; i++) {
+        const f = fleets[i];
+        const tgt = planetMap.get(f.toId);
+        if (!tgt) continue;
+        if (f.owner === 2 && tgt.owner === 1) underAttackByEnemy.add(f.toId);
+        if (f.owner === 1 && tgt.owner === 2) underAttackByPlayer.add(f.toId);
+        if (f.owner !== tgt.owner) underAttackAny.add(f.toId);
+        incomingUnits.set(f.toId, (incomingUnits.get(f.toId) || 0) + f.units);
+      }
+
+      // ── Elapsed time for weather system ──
+      const gameStartTime = s.gameStartTime || now;
+      const elapsedMs = now - gameStartTime;
+      const stormMode = elapsedMs > 240000; // 4 minutes
+
+      // ── Tension state ──
+      let playerNodeCount = 0;
+      let aiNodeCount = 0;
+      let totalOwnedNodes = 0;
+      for (let i = 0; i < planets.length; i++) {
+        if (planets[i].owner === 1) { playerNodeCount++; totalOwnedNodes++; }
+        if (planets[i].owner === 2) { aiNodeCount++; totalOwnedNodes++; }
+      }
+      const playerTension = totalOwnedNodes > 0 && playerNodeCount / planets.length < 0.2;
+      const aiTension = totalOwnedNodes > 0 && aiNodeCount / planets.length < 0.2;
+
+      ctx.clearRect(0, 0, width, height);
+
+      // ── Background layer (cached) ──
+      ctx.drawImage(bgC!, 0, 0, width, height);
+
+      // ── STAR TWINKLE SYSTEM ──
+      for (let i = 0; i < 30; i++) {
+        const star = stars[i];
+        const sinVal = Math.sin(now / star.speed + star.phase);
+        const absSin = sinVal < 0 ? -sinVal : sinVal;
+        // Only 20% twinkle brightly at any time (based on phase alignment)
+        const twinkleFactor = Math.sin(now / 4000 + star.phase * 3);
+        const isTwinkling = twinkleFactor > 0.6;
+        const starAlpha = isTwinkling ? 0.1 + 0.5 * absSin : 0.1 + 0.05 * absSin;
+        ctx.beginPath();
+        ctx.arc(star.x, star.y, star.size, 0, TWO_PI);
+        ctx.fillStyle = 'rgba(255,255,240,' + starAlpha.toFixed(3) + ')';
+        ctx.fill();
+      }
+
+      // ── FIREFLY SYSTEM ──
+      if (!degraded) {
+        for (let i = 0; i < 6; i++) {
+          const ff = fireflies[i];
+          ff.x = ff.baseX + Math.sin(now * ff.freqX + ff.phaseX) * ff.ampX;
+          ff.y = ff.baseY + Math.cos(now * ff.freqY + ff.phaseY) * ff.ampY;
+          // Wrap around screen
+          if (ff.x < -20) ff.x += width + 40;
+          if (ff.x > width + 20) ff.x -= width + 40;
+          if (ff.y < -20) ff.y += height + 40;
+          if (ff.y > height + 20) ff.y -= height + 40;
+          // Pulse opacity 0.3-0.6
+          const ffAlpha = 0.3 + 0.3 * (0.5 + 0.5 * Math.sin(now * 0.003 + i * 1.7));
+          ctx.beginPath();
+          ctx.arc(ff.x, ff.y, 2, 0, TWO_PI);
+          ctx.fillStyle = 'rgba(255,250,240,' + ffAlpha.toFixed(3) + ')';
+          ctx.fill();
+          // Soft glow around firefly
+          ctx.beginPath();
+          ctx.arc(ff.x, ff.y, 6, 0, TWO_PI);
+          ctx.fillStyle = 'rgba(255,250,240,' + (ffAlpha * 0.15).toFixed(3) + ')';
+          ctx.fill();
+        }
+      }
+
+      // ── Dynamic fog wisps ──
+      const maxWisps = perf.maxFogWisps;
+      for (let i = 0; i < maxWisps; i++) {
+        const phase = now / (6000 + i * 2000);
+        const wx = (width * (0.2 + i * 0.3) + 60 * Math.sin(phase)) % (width + 300) - 150;
+        const wy = height * (0.3 + i * 0.15) + 30 * Math.cos(phase * 0.7);
+        ctx.fillStyle = 'rgba(200,220,200,0.025)';
+        ctx.beginPath(); ctx.ellipse(wx, wy, 150, 60, 0, 0, TWO_PI); ctx.fill();
+      }
+
+      // ── WEATHER SYSTEM ──
+      if (stormMode) {
+        // Dark clouds
+        for (let i = 0; i < 3; i++) {
+          const cl = clouds[i];
+          cl.x += cl.speed;
+          if (cl.x > width + cl.w) cl.x = -cl.w;
+          ctx.beginPath();
+          ctx.ellipse(cl.x, cl.y, cl.w * 0.5, cl.h * 0.5, 0, 0, TWO_PI);
+          ctx.fillStyle = 'rgba(0,0,0,0.1)';
+          ctx.fill();
+        }
+
+        // Lightning
+        if (now - lastLightningTime > nextLightningInterval) {
+          lastLightningTime = now;
+          nextLightningInterval = 8000 + (((now * 13) % 7000) | 0);
+          lightningFlashTimer = now;
+          rainBurstTimer = now;
+        }
+        // Lightning flash: 80ms white flash
+        if (lightningFlashTimer > 0 && now - lightningFlashTimer < 80) {
+          ctx.fillStyle = 'rgba(255,255,255,0.06)';
+          ctx.fillRect(0, 0, width, height);
+        }
+        // Rain burst: 1 second after lightning
+        if (rainBurstTimer > 0 && now - rainBurstTimer < 1000 && !degraded) {
+          const rainProgress = (now - rainBurstTimer) / 1000;
+          for (let i = 0; i < 20; i++) {
+            const rl = rainLines[i];
+            if (!rl.active && rainProgress < 0.1) {
+              rl.active = true;
+              rl.x = ((i * 37 + now * 0.1) % width);
+              rl.y = ((i * 53) % height);
+              rl.vx = 2;
+              rl.vy = 12;
+            }
+            if (rl.active) {
+              rl.x += rl.vx;
+              rl.y += rl.vy;
+              if (rl.y > height) { rl.active = false; continue; }
+              ctx.beginPath();
+              ctx.moveTo(rl.x, rl.y);
+              ctx.lineTo(rl.x + 2, rl.y + 8);
+              ctx.strokeStyle = 'rgba(180,200,255,0.08)';
+              ctx.lineWidth = 1;
+              ctx.stroke();
+            }
+          }
+        } else {
+          // Reset rain lines
+          for (let i = 0; i < 20; i++) rainLines[i].active = false;
+        }
+      }
+
+      // ── Empire atmosphere glow ──
+      if (planets.length > 0) {
+        const capital = planets[0]; // Player capital is always id 0
+        if (capital.owner === 1) {
+          const empColor = pEmpRef.current?.glowRgb ?? '68,238,102';
+          const atmOp = 0.03 + 0.02 * Math.sin(now / 3000);
+          const atmGrad = ctx.createRadialGradient(capital.x, capital.y, 0, capital.x, capital.y, 80);
+          atmGrad.addColorStop(0, `rgba(${empColor},${atmOp.toFixed(3)})`);
+          atmGrad.addColorStop(1, `rgba(${empColor},0)`);
+          ctx.fillStyle = atmGrad; ctx.beginPath(); ctx.arc(capital.x, capital.y, 80, 0, TWO_PI); ctx.fill();
+        }
+      }
+
+      // ── Fog & mirage state ──
+      const fogOn = s.fogEnabled;
+      const mirageActive = s.abilityActive && s.playerEmpireId === 'ptolemaic';
+
+      // ── Territory connection web (glowing lines between nearby same-owner nodes) ──
+      const TERRITORY_LINK_DIST = 180;
+      for (let i = 0; i < planets.length; i++) {
+        const a = planets[i];
+        if (a.owner === 0) continue;
+        if (fogOn && a.owner !== 1 && !isVisible(a.x, a.y, planets)) continue;
+        for (let j = i + 1; j < planets.length; j++) {
+          const b = planets[j];
+          if (b.owner !== a.owner) continue;
+          if (fogOn && b.owner !== 1 && !isVisible(b.x, b.y, planets)) continue;
+          const d = Math.hypot(a.x - b.x, a.y - b.y);
+          if (d > TERRITORY_LINK_DIST) continue;
+          const linkOp = 0.035 * (1 - d / TERRITORY_LINK_DIST);
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+          ctx.strokeStyle = eGlow(a.owner) + `${linkOp.toFixed(3)})`;
+          ctx.lineWidth = 1.5; ctx.stroke();
+        }
+      }
+
+      // ── Ambient motes (very subtle, only 4) ──
+      const motes = ambientMotes.current;
+      for (let i = 0; i < Math.min(4, motes.length); i++) {
+        const m = motes[i];
+        m.x += m.vx * 0.012; m.y += m.vy * 0.012;
+        if (m.x < -10) m.x = width + 10;
+        if (m.x > width + 10) m.x = -10;
+        if (m.y < -10) m.y = height + 10;
+        if (m.y > height + 10) m.y = -10;
+        ctx.beginPath(); ctx.arc(m.x, m.y, 0.8, 0, TWO_PI);
+        ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fill();
+      }
+
+      // ── Visible planets ──
+      // Track captures
+      for (let i = 0; i < planets.length; i++) {
+        const p = planets[i];
+        const prev = prevOwners.get(p.id);
+        if (prev !== undefined && prev !== p.owner) captureTrans.set(p.id, { prevOwner: prev, t: 0 });
+        prevOwners.set(p.id, p.owner);
+      }
+      captureTrans.forEach((tr, id) => {
+        tr.t = Math.min(1, tr.t + 0.033);
+        if (tr.t >= 1) captureTrans.delete(id);
+      });
+
+      // ── ENHANCED Conquest flashes ──
+      for (let i = 0; i < conquestFlashes.length; i++) {
+        const cf = conquestFlashes[i];
+        if (cf.t < 0) continue;
+        const t = cf.t; // 0 to 1
+
+        // Phase 1 (0-0.15): White flash circle
+        if (t < 0.15) {
+          const p1 = t / 0.15;
+          const flashR = 40 * p1;
+          const flashOp = 0.9 * (1 - p1);
+          ctx.beginPath();
+          ctx.arc(cf.x, cf.y, flashR, 0, TWO_PI);
+          ctx.fillStyle = 'rgba(255,255,255,' + flashOp.toFixed(3) + ')';
+          ctx.fill();
+        }
+
+        // Phase 2 (0.15-0.6): Spawn VFX particles (only once at start of phase)
+        if (t >= 0.14 && t < 0.18) {
+          const cColor = eColor(cf.owner);
+          // 8 large sparks
+          for (let j = 0; j < 8; j++) {
+            const ang = (j / 8) * TWO_PI;
+            const speed = 80 + (j * 17 % 40);
+            spawnVFX(cf.x, cf.y,
+              Math.cos(ang) * speed, Math.sin(ang) * speed,
+              3.5, cColor, 500, 0, 'spark');
+          }
+          // 12 small sparks
+          for (let j = 0; j < 12; j++) {
+            const ang = (j / 12) * TWO_PI + 0.3;
+            const speed = 40 + (j * 23 % 30);
+            spawnVFX(cf.x, cf.y,
+              Math.cos(ang) * speed, Math.sin(ang) * speed,
+              1.5, cColor, 400, 0, 'spark');
+          }
+        }
+
+        // Phase 3 (0.3-0.9): 3 expanding rings
+        if (t >= 0.29 && t < 0.33) {
+          const cColor = eColor(cf.owner);
+          for (let j = 0; j < 3; j++) {
+            spawnVFX(cf.x, cf.y, 0, 0, 0, cColor, 500 + j * 100, 0, 'ring', 40 + j * 15, 2.5 - j * 0.5);
+          }
+        }
+
+        // Phase 4 (0.6-1.0): 8 ember particles drifting upward
+        if (t >= 0.59 && t < 0.63) {
+          const cColor = eColor(cf.owner);
+          for (let j = 0; j < 8; j++) {
+            const ang = (j / 8) * TWO_PI;
+            spawnVFX(cf.x + Math.cos(ang) * 5, cf.y + Math.sin(ang) * 5,
+              Math.cos(ang) * 15, -30 - (j * 7 % 20),
+              2, cColor, 800, 5, 'ember');
+          }
+        }
+
+        // Original ring effects (kept for continuous visual)
+        const eased = 1 - (1 - t) * (1 - t);
+        const ringIdx = i % 3;
+        const baseR = [12, 18, 25][ringIdx] || 12;
+        const maxR = [40, 55, 70][ringIdx] || 40;
+        const rr = baseR + eased * (maxR - baseR);
+        const op = Math.max(0, (1 - t) * 0.88);
+        if (op > 0.01) {
+          ctx.beginPath(); ctx.arc(cf.x, cf.y, rr, 0, TWO_PI);
+          ctx.strokeStyle = eColor(cf.owner); ctx.lineWidth = 3.5 - t * 2.5; ctx.globalAlpha = op; ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+        // Fill burst
+        ctx.beginPath(); ctx.arc(cf.x, cf.y, 10 + eased * 40, 0, TWO_PI);
+        ctx.fillStyle = eColor(cf.owner); ctx.globalAlpha = Math.max(0, 0.25 - t * 0.25); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
+      // ── ENHANCED Impact flashes ──
+      for (let i = 0; i < impactFlashes.length; i++) {
+        const inf = impactFlashes[i];
+        const t = inf.t;
+        const eased = 1 - (1 - t) * (1 - t) * (1 - t);
+
+        // Ring shockwave: 0→35px, 200ms (t < ~0.25)
+        if (t < 0.25) {
+          const ringP = t / 0.25;
+          const ringR = ringP * 35;
+          const ringOp = 1 - ringP;
+          ctx.beginPath();
+          ctx.arc(inf.x, inf.y, ringR, 0, TWO_PI);
+          ctx.strokeStyle = 'rgba(255,240,160,' + ringOp.toFixed(3) + ')';
+          ctx.lineWidth = 2.5 - ringP * 2;
+          ctx.stroke();
+        }
+
+        // Spawn sparks at the start
+        if (t >= 0.01 && t < 0.05) {
+          // 6 large sparks
+          for (let j = 0; j < 6; j++) {
+            const ang = (j / 6) * TWO_PI + t;
+            const tangAng = ang + Math.PI * 0.3; // tangential velocity
+            spawnVFX(inf.x, inf.y,
+              Math.cos(tangAng) * 120, Math.sin(tangAng) * 120,
+              4, 'rgba(255,240,160,1)', 500, 0, 'spark');
+          }
+          // 6 small embers with arc
+          for (let j = 0; j < 6; j++) {
+            const ang = (j / 6) * TWO_PI + 0.5;
+            const tangAng = ang - Math.PI * 0.25;
+            spawnVFX(inf.x, inf.y,
+              Math.cos(tangAng) * 60, Math.sin(tangAng) * 60,
+              2, 'rgba(255,200,100,1)', 300, 20, 'ember');
+          }
+        }
+
+        // Original flash ring
+        const r = 6 + eased * 24;
+        const op = Math.max(0, 1 - t);
+        ctx.beginPath(); ctx.arc(inf.x, inf.y, r, 0, TWO_PI);
+        ctx.strokeStyle = 'rgba(255,240,160,0.95)'; ctx.lineWidth = 2.5 - t * 2; ctx.globalAlpha = op; ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Fleet arcs (subtle dashed paths) ──
+      for (let i = 0; i < fleets.length; i++) {
+        const f = fleets[i];
+        const from = planetMap.get(f.fromId);
+        const to = planetMap.get(f.toId);
+        if (!from || !to) continue;
+        const { cx: cpx, cy: cpy } = bezCtrl(from.x, from.y, to.x, to.y, f.arc);
+        ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.quadraticCurveTo(cpx, cpy, to.x, to.y);
+        ctx.strokeStyle = eGlow(f.owner as 0|1|2) + '0.06)'; ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 10]); ctx.stroke(); ctx.setLineDash([]);
+      }
+
+      // ── Targeting lines (animated dashes scroll toward target) ──
+      const showTarget = ptr.x > 4 || ptr.y > 4;
+      const selPlanet = selId !== null ? planetMap.get(selId) : undefined;
+      const dashOffset = -(now / 40) % 17; // Animated dash scroll
+
+      if (selPlanet && showTarget) {
+        const empColor = eColor(1);
+        // Glow line
+        ctx.beginPath(); ctx.moveTo(selPlanet.x, selPlanet.y); ctx.lineTo(ptr.x, ptr.y);
+        ctx.strokeStyle = eGlow(1) + '0.14)'; ctx.lineWidth = 14; ctx.lineCap = 'round'; ctx.stroke();
+        // Dashed line with animated offset
+        ctx.beginPath(); ctx.moveTo(selPlanet.x, selPlanet.y); ctx.lineTo(ptr.x, ptr.y);
+        ctx.strokeStyle = empColor; ctx.globalAlpha = 0.7; ctx.lineWidth = 2.2;
+        ctx.setLineDash([10, 7]); ctx.lineDashOffset = dashOffset; ctx.stroke();
+        ctx.setLineDash([]); ctx.lineDashOffset = 0; ctx.globalAlpha = 1;
+        ctx.lineCap = 'butt';
+        // Arrowhead (pulses size slightly)
+        const aa = Math.atan2(ptr.y - selPlanet.y, ptr.x - selPlanet.x);
+        const arrowScale = 1 + 0.1 * Math.sin(now / 200);
+        const arrowLen = 13 * arrowScale;
+        ctx.beginPath();
+        ctx.moveTo(ptr.x - Math.cos(aa) * 4, ptr.y - Math.sin(aa) * 4);
+        ctx.lineTo(ptr.x - Math.cos(aa - 0.45) * arrowLen, ptr.y - Math.sin(aa - 0.45) * arrowLen);
+        ctx.lineTo(ptr.x - Math.cos(aa + 0.45) * arrowLen, ptr.y - Math.sin(aa + 0.45) * arrowLen);
+        ctx.closePath(); ctx.fillStyle = empColor; ctx.fill();
+        // Preview badge with battle outcome estimate
+        const pu = Math.max(1, Math.floor(selPlanet.units * (s.fleetPercent / 100)));
+        const targetP = getPlanetAt(ptr.x, ptr.y);
+        const badgeX = ptr.x + 22, badgeY = ptr.y - 20;
+
+        ctx.beginPath(); ctx.arc(badgeX, badgeY, 14, 0, TWO_PI);
+        ctx.fillStyle = 'rgba(20,12,4,0.92)'; ctx.fill();
+        ctx.strokeStyle = empColor; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = empColor; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(String(pu), badgeX, badgeY + 4);
+
+        // Battle outcome preview when hovering over a target
+        if (targetP && targetP.owner !== 1) {
+          const defUnits = Math.floor(targetP.units);
+          const outcome = pu - defUnits;
+          const outcomeColor = outcome > 0 ? '#66FF88' : '#FF6644';
+          const outcomeText = outcome > 0 ? `WIN +${outcome}` : outcome === 0 ? 'DRAW' : `LOSE`;
+          ctx.font = 'bold 9px sans-serif';
+          ctx.fillStyle = 'rgba(0,0,0,0.6)';
+          ctx.fillText(outcomeText, badgeX + 1, badgeY + 16);
+          ctx.fillStyle = outcomeColor;
+          ctx.fillText(outcomeText, badgeX, badgeY + 15);
+        }
+      }
+      if (allSel && showTarget) {
+        // Multi-select: stagger ring appearance by 50ms per node (cascade)
+        let nodeIdx = 0;
+        for (let i = 0; i < planets.length; i++) {
+          const p = planets[i];
+          if (p.owner !== 1) continue;
+          ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(ptr.x, ptr.y);
+          ctx.strokeStyle = eColor(1); ctx.lineWidth = 1.8; ctx.globalAlpha = 0.5;
+          ctx.setLineDash([10, 7]); ctx.lineDashOffset = dashOffset; ctx.stroke();
+          ctx.setLineDash([]); ctx.lineDashOffset = 0; ctx.globalAlpha = 1;
+          nodeIdx++;
+        }
+      }
+
+      // ── Pre-compute intel for war fog ──
+      const intelMap = new Map<number, boolean>();
+      for (let i = 0; i < planets.length; i++) {
+        const p = planets[i];
+        if (p.owner === 1 || p.owner === 0) {
+          intelMap.set(p.id, true); // Always have intel on own + neutral nodes
+        } else {
+          intelMap.set(p.id, hasIntel(p.x, p.y, planets));
+        }
+      }
+
+      // ── Nodes ──
+      for (let i = 0; i < planets.length; i++) {
+        const p = planets[i];
+        if (fogOn && p.owner !== 1 && !isVisible(p.x, p.y, planets)) continue;
+
+        const playerHasIntel = intelMap.get(p.id) ?? false;
+
+        // Enemy capital is HIDDEN until player has intel on it
+        if (p.owner === 2 && p.nodeType === 'capital' && !playerHasIntel) continue;
+
+        const color = eColor(p.owner);
+        const glow = eGlow(p.owner);
+        const accent = eAccent(p.owner);
+        const baseR = p.radius;
+        const shape = eShape(p.owner);
+
+        // Node size scaling based on unit count (smooth lerp)
+        const targetScale = nodeScale(p.units);
+        const prevScale = nodeScaleCache.current.get(p.id) ?? targetScale;
+        const currentScale = prevScale + (targetScale - prevScale) * 0.05; // smooth lerp
+        nodeScaleCache.current.set(p.id, currentScale);
+        const r = baseR * currentScale;
+
+        const isSel = p.id === selId || (allSel && p.owner === 1);
+
+        // Impact shake (enhanced: close battle = stronger shake)
+        let px = p.x, py = p.y;
+        for (let j = 0; j < impactFlashes.length; j++) {
+          const inf = impactFlashes[j];
+          if (Math.hypot(inf.x - p.x, inf.y - p.y) < r + 18) {
+            const shakeIntensity = p.units <= 3 ? 5.5 : 2.8;
+            px += Math.cos(inf.t * Math.PI * 10) * shakeIntensity * (1 - inf.t);
+            py += Math.sin(inf.t * Math.PI * 10) * (shakeIntensity * 0.6) * (1 - inf.t);
+            break;
+          }
+        }
+
+        // Node hit red flash on number
+        let nodeHitFlash = 0;
+        for (let j = 0; j < nodeHits.length; j++) {
+          if (nodeHits[j].nodeId === p.id) {
+            nodeHitFlash = Math.max(nodeHitFlash, 1 - nodeHits[j].t);
+            break;
+          }
+        }
+
+        // War fog: is this enemy node hidden (no intel)?
+        const enemyHidden = p.owner === 2 && !playerHasIntel;
+
+        // Breathing scale (offset by node index * 0.3s for desync)
+        const breathPhase = now / 1600 + p.id * 0.3;
+        const breathScale = 0.97 + 0.03 * (1 + Math.sin(breathPhase));
+
+        // ── ENHANCED NODE GLOW SYSTEM ──
+        if (p.owner !== 0 && !enemyHidden) {
+          const glowRings = degraded ? 1 : 3;
+          const glowBreath = 0.5 + 0.5 * Math.sin(now / 1400 + p.id * 0.72);
+          for (let gr = 0; gr < glowRings; gr++) {
+            const ringOffset = (gr + 1) * 4; // 4, 8, 12
+            const ringOp = [0.25, 0.15, 0.08][gr] * (0.7 + 0.3 * glowBreath);
+            const ringStroke = [1.5, 1.0, 0.5][gr];
+            ctx.beginPath();
+            ctx.arc(px, py, r + ringOffset, 0, TWO_PI);
+            ctx.strokeStyle = glow + ringOp.toFixed(3) + ')';
+            ctx.lineWidth = ringStroke;
+            ctx.stroke();
+          }
+        } else {
+          // Original halo for neutral/hidden
+          const haloR = r * (1.35 + 0.05 * Math.sin(now / 1400 + p.id * 0.72));
+          const haloGrad = ctx.createRadialGradient(px, py, r * 0.5, px, py, haloR);
+          if (p.owner !== 0) {
+            const haloOp = enemyHidden ? '0.1)' : '0.18)';
+            haloGrad.addColorStop(0, glow + haloOp); haloGrad.addColorStop(1, glow + '0)');
+          } else {
+            haloGrad.addColorStop(0, 'rgba(139,115,85,0.05)'); haloGrad.addColorStop(1, 'rgba(139,115,85,0)');
+          }
+          ctx.fillStyle = haloGrad; ctx.beginPath(); ctx.arc(px, py, haloR, 0, TWO_PI); ctx.fill();
+        }
+
+        // Capital crown breathing + pulse when under attack
+        if (p.nodeType === 'capital') {
+          const underAttackCap = underAttackAny.has(p.id);
+          const crownPulseSpeed = underAttackCap ? 200 : 600;
+          const cp = 0.3 + 0.2 * Math.sin(now / crownPulseSpeed);
+          ctx.beginPath(); ctx.arc(px, py, r + 18, 0, TWO_PI);
+          ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.globalAlpha = cp; ctx.stroke(); ctx.globalAlpha = 1;
+        }
+
+        // ── ENHANCED Selection rings with orbiting sparkles ──
+        if (isSel) {
+          const selPulse = 0.6 + 0.4 * (0.5 + 0.5 * Math.sin(now / 600)); // 1.2s cycle
+          ctx.beginPath(); ctx.arc(px, py, r + 8, 0, TWO_PI);
+          ctx.strokeStyle = eColor(1); ctx.lineWidth = 2; ctx.globalAlpha = selPulse; ctx.stroke(); ctx.globalAlpha = 1;
+          // Inner dashed ring
+          ctx.beginPath(); ctx.arc(px, py, r + 14, 0, TWO_PI);
+          ctx.strokeStyle = '#FFCC22'; ctx.lineWidth = 1.5; ctx.setLineDash([7, 4]); ctx.stroke(); ctx.setLineDash([]);
+
+          // 4 orbiting sparkle dots
+          if (!degraded) {
+            const orbitR = r + 20;
+            const rotSpeed = TWO_PI / 1500; // 1.5s full rotation
+            for (let sp = 0; sp < 4; sp++) {
+              const spAngle = now * rotSpeed + (sp * Math.PI * 0.5);
+              const spx = px + Math.cos(spAngle) * orbitR;
+              const spy = py + Math.sin(spAngle) * orbitR;
+              ctx.beginPath();
+              ctx.arc(spx, spy, 2, 0, TWO_PI);
+              ctx.fillStyle = eColor(1);
+              ctx.globalAlpha = 0.7 + 0.3 * Math.sin(now / 200 + sp);
+              ctx.fill();
+              ctx.globalAlpha = 1;
+            }
+          }
+        }
+
+        // ── ENERGY ARCS for high-unit nodes (50+) ──
+        if (p.units >= 50 && p.owner !== 0 && !enemyHidden && !degraded) {
+          const arcCheck = (now % 3000 + p.id * 700) % 3000;
+          if (arcCheck < 150) {
+            const arcT = arcCheck / 150;
+            const arcAngle = (p.id * 1.7 + now * 0.003) % TWO_PI;
+            const arcStartX = px + Math.cos(arcAngle) * r;
+            const arcStartY = py + Math.sin(arcAngle) * r;
+            const arcEndX = px + Math.cos(arcAngle + 0.5) * (r + 12);
+            const arcEndY = py + Math.sin(arcAngle + 0.5) * (r + 12);
+            const arcCpX = px + Math.cos(arcAngle + 0.25) * (r + 20);
+            const arcCpY = py + Math.sin(arcAngle + 0.25) * (r + 20);
+            ctx.beginPath();
+            ctx.moveTo(arcStartX, arcStartY);
+            ctx.quadraticCurveTo(arcCpX, arcCpY, arcEndX, arcEndY);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
+            ctx.globalAlpha = 0.6 * (1 - arcT);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+          }
+        }
+
+        // Under attack warning
+        const underAttack = p.owner === 1 && underAttackByEnemy.has(p.id);
+        if (underAttack) {
+          const wp = 1 + 0.14 * Math.sin(now / 145);
+          ctx.beginPath(); ctx.arc(px, py, (r + 20) * wp, 0, TWO_PI);
+          ctx.strokeStyle = 'rgba(238,100,0,0.65)'; ctx.lineWidth = 2.5; ctx.stroke();
+        }
+
+        // ── TENSION STATE: losing player flicker ──
+        let tensionOpacity = 1.0;
+        if (playerTension && p.owner === 1) {
+          const flickerPhase = now * 0.01 + p.id * 2.3;
+          tensionOpacity = 0.85 + 0.15 * Math.sin(flickerPhase);
+        }
+        if (aiTension && p.owner === 2 && !enemyHidden) {
+          const flickerPhase = now * 0.01 + p.id * 3.1;
+          tensionOpacity = 0.85 + 0.15 * Math.sin(flickerPhase);
+        }
+
+        // ── Draw node body with breathing ──
+        ctx.save();
+        ctx.translate(px, py); ctx.scale(breathScale, breathScale); ctx.translate(-px, -py);
+        ctx.globalAlpha = tensionOpacity;
+
+        if (p.nodeType === 'ruins') ctx.globalAlpha = 0.65 * tensionOpacity;
+        if (shape === 'pyramid') drawPyramid(ctx, px, py, r, color, accent);
+        else if (shape === 'colosseum') drawColosseum(ctx, px, py, r, color, accent);
+        else if (shape === 'yurt') drawYurt(ctx, px, py, r, color, accent);
+        else if (shape === 'sphinx') drawSphinx(ctx, px, py, r, color, accent);
+        else if (shape === 'torii') drawTorii(ctx, px, py, r, color, accent);
+        else drawCastle(ctx, px, py, r, color, accent);
+        ctx.globalAlpha = 1;
+
+        // Garrison count (with war fog, red flash + scale on hit)
+        const showMirage = mirageActive && p.owner === 1;
+        const displayUnits = enemyHidden ? -1 : showMirage ? Math.round(p.units * (s.mirageOffsets[p.id] || 1)) : Math.floor(p.units);
+        const garrisonY = shape === 'pyramid' ? py + r * 0.12 + 8
+          : shape === 'colosseum' ? py + r * 0.08 + 8
+          : shape === 'yurt' ? py + r * 0.14 + 8
+          : shape === 'sphinx' ? py - r * 0.08 + 8
+          : py - r * 0.48 + 7;
+
+        // Number scale pulse on hit (1.0 → 1.2 → 1.0, 80ms)
+        const numScale = 1 + nodeHitFlash * 0.2;
+        ctx.save();
+        ctx.translate(px, garrisonY); ctx.scale(numScale, numScale); ctx.translate(-px, -garrisonY);
+
+        // Scale font inversely with node scale to keep readable
+        const fontSize = Math.max(11, Math.round(13 / currentScale));
+        ctx.font = `bold ${fontSize}px sans-serif`; ctx.textAlign = 'center';
+        ctx.globalAlpha = showMirage ? 0.7 + 0.3 * Math.sin(now / 120) : 0.95;
+        const numStr = enemyHidden ? '?' : String(displayUnits);
+        const numY = garrisonY + 5;
+        // Text shadow for readability
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillText(numStr, px + 1, numY + 1);
+        // Main text color
+        if (enemyHidden) {
+          ctx.fillStyle = 'rgba(255,100,100,0.5)';
+        } else if (nodeHitFlash > 0.1) {
+          ctx.fillStyle = `rgba(255,${Math.floor(80 + 175 * (1 - nodeHitFlash))},${Math.floor(80 * (1 - nodeHitFlash))},0.95)`;
+        } else if (showMirage) {
+          ctx.fillStyle = '#AAFFFF';
+        } else {
+          ctx.fillStyle = '#FFFFFF';
+        }
+        ctx.fillText(numStr, px, numY);
+        // Incoming fleet indicator (only if we have intel)
+        if (!enemyHidden) {
+          const incoming = incomingUnits.get(p.id);
+          if (incoming && incoming > 0 && p.owner !== 0) {
+            const isHostile = underAttackAny.has(p.id);
+            const incColor = isHostile ? '#FF6644' : '#66FF88';
+            const incText = isHostile ? `-${incoming}` : `+${incoming}`;
+            ctx.font = `bold ${Math.max(8, fontSize - 2)}px sans-serif`;
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillText(incText, px + 1, numY + fontSize + 1);
+            ctx.fillStyle = incColor;
+            ctx.globalAlpha = 0.7 + 0.3 * Math.sin(now / 300);
+            ctx.fillText(incText, px, numY + fontSize);
+          }
+        }
+        ctx.globalAlpha = 1;
+        ctx.restore();
+
+        ctx.restore();
+
+        // Node type icon
+        if (p.nodeType !== 'standard') drawNodeIcon(ctx, px, py, r, p.nodeType);
+
+        // Ruins timer bar
+        if (p.nodeType === 'ruins' && p.owner !== 0 && p.ruinsTimer > 0) {
+          ctx.fillStyle = 'rgba(255,255,255,0.15)';
+          ctx.fillRect(px - 15, py + r + 8, 30, 3);
+          ctx.fillStyle = color; ctx.globalAlpha = 0.7;
+          ctx.fillRect(px - 15, py + r + 8, 30 * (1 - p.ruinsTimer / 15), 3);
+          ctx.globalAlpha = 1;
+        }
+
+        // ── TENSION: Winner's capital golden halo ──
+        if (p.nodeType === 'capital') {
+          if ((aiTension && p.owner === 1) || (playerTension && p.owner === 2 && !enemyHidden)) {
+            const haloPhase = now / 2000;
+            const goldenR = r + 25 + 5 * Math.sin(haloPhase);
+            ctx.beginPath();
+            ctx.arc(px, py, goldenR, 0, TWO_PI);
+            ctx.strokeStyle = 'rgba(255,215,0,' + (0.15 + 0.1 * Math.sin(haloPhase * 1.5)).toFixed(3) + ')';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+        }
+
+        // ── Ability visual effects ──
+
+        // Eye of Ra: 6 golden rays per owned node, rotate slowly
+        if (s.abilityActive && s.playerEmpireId === 'egypt' && p.owner === 1) {
+          for (let d = 0; d < 6; d++) {
+            const rad = (d * 60 + now / 30) * DEG_TO_RAD;
+            const rayLen = r + 25 + 10 * Math.sin(now / 200 + d);
+            const rayGrad = ctx.createLinearGradient(px, py, px + Math.cos(rad) * rayLen, py + Math.sin(rad) * rayLen);
+            rayGrad.addColorStop(0, 'rgba(255,215,0,0.5)');
+            rayGrad.addColorStop(1, 'rgba(255,215,0,0)');
+            ctx.beginPath(); ctx.moveTo(px, py);
+            ctx.lineTo(px + Math.cos(rad) * rayLen, py + Math.sin(rad) * rayLen);
+            ctx.strokeStyle = rayGrad; ctx.lineWidth = 2.5;
+            ctx.globalAlpha = 0.4 + 0.2 * Math.sin(now / 150 + d);
+            ctx.stroke(); ctx.globalAlpha = 1;
+          }
+          // Gold pulse on node
+          ctx.beginPath(); ctx.arc(px, py, r + 3, 0, TWO_PI);
+          ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.3 + 0.2 * Math.sin(now / 300);
+          ctx.stroke(); ctx.globalAlpha = 1;
+        }
+
+        // Rome Testudo: silver shimmer ripple
+        if (s.abilityActive && s.playerEmpireId === 'rome' && p.owner === 1) {
+          const rippleR = r + 8 + (now / 100 % 20);
+          ctx.beginPath(); ctx.arc(px, py, rippleR, 0, TWO_PI);
+          ctx.strokeStyle = '#C0C0C0'; ctx.lineWidth = 1.5;
+          ctx.globalAlpha = Math.max(0, 0.4 - (rippleR - r - 8) / 20 * 0.4);
+          ctx.stroke(); ctx.globalAlpha = 1;
+        }
+
+        // Ptolemaic Mirage: wavy distortion + teal smoke wisps
+        if (showMirage) {
+          // Shimmer ring
+          ctx.beginPath(); ctx.arc(px + 3 * Math.sin(now / 80), py, r + 4, 0, TWO_PI);
+          ctx.strokeStyle = 'rgba(34,170,170,0.3)'; ctx.lineWidth = 1.5;
+          ctx.setLineDash([3, 5]); ctx.stroke(); ctx.setLineDash([]);
+          // Teal smoke wisp drifting upward
+          const wispY = py - r - 4 - (now / 60 % 20);
+          const wispOp = Math.max(0, 0.15 - (now / 60 % 20) / 20 * 0.15);
+          ctx.beginPath(); ctx.ellipse(px + 3 * Math.sin(now / 200), wispY, 8, 4, 0, 0, TWO_PI);
+          ctx.fillStyle = `rgba(34,170,170,${wispOp.toFixed(3)})`; ctx.fill();
+        }
+
+        // Bushido: crimson aura + slash marks around owned nodes
+        if (s.abilityActive && s.playerEmpireId === 'japan' && p.owner === 1) {
+          ctx.beginPath(); ctx.arc(px, py, r + 10, 0, TWO_PI);
+          ctx.strokeStyle = '#DC143C'; ctx.lineWidth = 2;
+          ctx.globalAlpha = 0.3 + 0.2 * Math.sin(now / 200);
+          ctx.stroke(); ctx.globalAlpha = 1;
+          // Small slash marks
+          for (let sl = 0; sl < 3; sl++) {
+            const sa = (sl * 120 + now / 15) * DEG_TO_RAD;
+            ctx.beginPath();
+            ctx.moveTo(px + Math.cos(sa) * (r + 4), py + Math.sin(sa) * (r + 4));
+            ctx.lineTo(px + Math.cos(sa) * (r + 14), py + Math.sin(sa) * (r + 14));
+            ctx.strokeStyle = '#FF6688'; ctx.lineWidth = 1.5;
+            ctx.globalAlpha = 0.4; ctx.stroke(); ctx.globalAlpha = 1;
+          }
+        }
+
+        // Garrison arc (hidden for enemies without intel)
+        if (!enemyHidden) {
+          const arcR = r + 6, arcFill = Math.min(1, p.units / 99);
+          if (arcFill > 0.01 && p.owner !== 0) {
+            ctx.beginPath(); ctx.arc(px, py, arcR, -Math.PI / 2, -Math.PI / 2 + TWO_PI * arcFill);
+            ctx.strokeStyle = glow + '0.6)'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.stroke(); ctx.lineCap = 'butt';
+          }
+        }
+      }
+
+      // ── Fleets (with V-formation for >1 unit, badge for >8) ──
+      // Track departures for puff effect
+      if (fleets.length !== lastFleetCount) {
+        if (fleets.length > lastFleetCount) {
+          // New fleet(s) added - record departure
+          for (let i = 0; i < fleets.length; i++) {
+            const f = fleets[i];
+            if (f.progress < 0.05) {
+              departureTimestamps.set(f.fromId, now);
+            }
+          }
+        }
+        lastFleetCount = fleets.length;
+      }
+
+      for (let i = 0; i < fleets.length; i++) {
+        const f = fleets[i];
+        const from = planetMap.get(f.fromId);
+        const to = planetMap.get(f.toId);
+        if (!from || !to) continue;
+        const { cx: cpx, cy: cpy } = bezCtrl(from.x, from.y, to.x, to.y, f.arc);
+        const pos = bezPt(f.progress, from.x, from.y, cpx, cpy, to.x, to.y);
+        const angle = bezAngle(f.progress, from.x, from.y, cpx, cpy, to.x, to.y);
+
+        const color = eUnitColor(f.owner as 0|1|2);
+        const glow = eGlow(f.owner as 0|1|2);
+        const unitShape = eUnitShape(f.owner as 0|1|2);
+
+        const cos = Math.cos(angle), sin = Math.sin(angle);
+        const perpCos = Math.cos(angle + Math.PI / 2), perpSin = Math.sin(angle + Math.PI / 2);
+
+        // ── FLEET DEPARTURE PUFF ──
+        if (f.progress < 0.05 && !degraded) {
+          const depT = f.progress / 0.05; // 0→1
+          const fleetColor = eGlow(f.owner as 0|1|2);
+          for (let puff = 0; puff < 3; puff++) {
+            const puffAngle = (puff * TWO_PI / 3) + depT * 2;
+            const puffR = from.radius + 5 + depT * 15;
+            const puffX = from.x + Math.cos(puffAngle) * puffR;
+            const puffY = from.y + Math.sin(puffAngle) * puffR;
+            const puffOp = 0.3 * (1 - depT);
+            ctx.beginPath();
+            ctx.arc(puffX, puffY, 4 + depT * 6, 0, TWO_PI);
+            ctx.fillStyle = fleetColor + puffOp.toFixed(3) + ')';
+            ctx.fill();
+          }
+        }
+
+        // ── COMBAT AURA BEAM (progress > 0.7 heading to enemy) ──
+        if (f.progress > 0.7 && !degraded) {
+          const tgt = planetMap.get(f.toId);
+          if (tgt && f.owner !== tgt.owner && tgt.owner !== 0) {
+            // Faint energy beam from fleet to target
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            ctx.lineTo(tgt.x, tgt.y);
+            ctx.strokeStyle = eGlow(f.owner as 0|1|2) + '0.12)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Flowing dots along beam
+            const beamDist = Math.hypot(tgt.x - pos.x, tgt.y - pos.y);
+            const dotCount = 3;
+            for (let d = 0; d < dotCount; d++) {
+              const dotT = ((now * 0.002 + d * 0.33) % 1);
+              const dotX = pos.x + (tgt.x - pos.x) * dotT;
+              const dotY = pos.y + (tgt.y - pos.y) * dotT;
+              ctx.beginPath();
+              ctx.arc(dotX, dotY, 1.5, 0, TWO_PI);
+              ctx.fillStyle = eGlow(f.owner as 0|1|2) + '0.2)';
+              ctx.fill();
+            }
+          }
+        }
+
+        // Empire-specific trails
+        const maxTrail = perf.maxTrail;
+        for (let t = 0; t < maxTrail; t++) {
+          const tp = bezPt(Math.max(0, f.progress - (t + 1) * 0.06), from.x, from.y, cpx, cpy, to.x, to.y);
+          const trailOp = (0.35 - t * 0.12);
+          if (unitShape === 'scarab') {
+            // Golden sparkle dots
+            ctx.beginPath(); ctx.arc(tp.x + (Math.random() - 0.5) * 3, tp.y + (Math.random() - 0.5) * 3, 2 - t * 0.5, 0, TWO_PI);
+            ctx.fillStyle = `rgba(255,215,0,${trailOp.toFixed(2)})`; ctx.fill();
+          } else if (unitShape === 'shield') {
+            // Silver streak, straight line
+            ctx.beginPath(); ctx.arc(tp.x, tp.y, 3 - t, 0, TWO_PI);
+            ctx.fillStyle = `rgba(192,192,192,${trailOp.toFixed(2)})`; ctx.fill();
+          } else if (unitShape === 'horse') {
+            // Orange dust cloud (soft circles)
+            ctx.beginPath(); ctx.arc(tp.x, tp.y, 5 - t * 1.5, 0, TWO_PI);
+            ctx.fillStyle = `rgba(204,119,34,${(trailOp * 0.5).toFixed(2)})`; ctx.fill();
+          } else if (unitShape === 'ankh') {
+            // Teal glow dots
+            ctx.beginPath(); ctx.arc(tp.x, tp.y, 2.5 - t * 0.6, 0, TWO_PI);
+            ctx.fillStyle = `rgba(34,170,170,${trailOp.toFixed(2)})`; ctx.fill();
+          } else if (unitShape === 'katana') {
+            // Cherry blossom petals / crimson slash
+            ctx.beginPath(); ctx.arc(tp.x + (Math.random() - 0.5) * 4, tp.y + (Math.random() - 0.5) * 4, 2 - t * 0.5, 0, TWO_PI);
+            ctx.fillStyle = `rgba(255,182,193,${(trailOp * 0.7).toFixed(2)})`; ctx.fill();
+          } else {
+            ctx.beginPath(); ctx.arc(tp.x, tp.y, 4 - t * 1.2, 0, TWO_PI);
+            ctx.fillStyle = glow + `${trailOp.toFixed(2)})`; ctx.fill();
+          }
+        }
+
+        // Glow
+        const gg = ctx.createRadialGradient(pos.x, pos.y, 2, pos.x, pos.y, 18);
+        gg.addColorStop(0, glow + '0.45)'); gg.addColorStop(1, glow + '0)');
+        ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(pos.x, pos.y, 18, 0, TWO_PI); ctx.fill();
+
+        if (f.units <= 8) {
+          // Draw individual units in V-formation
+          const unitCount = Math.min(f.units, V_FORMATION.length);
+          for (let u = 0; u < unitCount; u++) {
+            const off = V_FORMATION[u];
+            const ux = pos.x + off[0] * cos * 0.5 - off[1] * sin * 0.5;
+            const uy = pos.y + off[0] * sin * 0.5 + off[1] * cos * 0.5;
+            // Ankh wobble
+            const unitAngle = unitShape === 'ankh'
+              ? angle + Math.sin(now / 300 + u) * 5 * DEG_TO_RAD
+              : angle;
+            drawUnit(ctx, ux, uy, unitAngle, unitShape, color);
+          }
+        } else {
+          // Draw lead unit + count badge
+          const unitAngle = unitShape === 'ankh'
+            ? angle + Math.sin(now / 300) * 5 * DEG_TO_RAD
+            : angle;
+          drawUnit(ctx, pos.x, pos.y, unitAngle, unitShape, color);
+
+          // Count badge: rounded rect above fleet
+          const badgeX = pos.x - perpCos * 14;
+          const badgeY = pos.y - perpSin * 14;
+          const badgeW = f.units >= 100 ? 28 : f.units >= 10 ? 22 : 18;
+          const badgeH = 14;
+          ctx.beginPath();
+          ctx.roundRect(badgeX - badgeW / 2, badgeY - badgeH / 2, badgeW, badgeH, 4);
+          ctx.fillStyle = 'rgba(8,6,2,0.82)'; ctx.fill();
+          ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.stroke();
+          // Shadow beneath badge
+          ctx.beginPath();
+          ctx.roundRect(badgeX - badgeW / 2 + 1, badgeY - badgeH / 2 + 1, badgeW, badgeH, 4);
+          ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fill();
+          // Number
+          ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText(String(f.units), badgeX, badgeY + 3);
+        }
+
+        // Testudo overlay
+        if (s.abilityActive && s.playerEmpireId === 'rome' && f.owner === 1) {
+          // Silver shield overlay on units
+          ctx.beginPath(); ctx.arc(pos.x, pos.y, 12, 0, TWO_PI);
+          ctx.strokeStyle = 'rgba(200,200,220,0.5)'; ctx.lineWidth = 2; ctx.setLineDash([4, 3]); ctx.stroke(); ctx.setLineDash([]);
+          // Silver flash
+          ctx.beginPath(); ctx.arc(pos.x, pos.y, 8, 0, TWO_PI);
+          ctx.fillStyle = `rgba(192,192,192,${(0.15 + 0.1 * Math.sin(now / 200)).toFixed(2)})`; ctx.fill();
+        }
+
+        // Blitz speed lines (longer trails + lightning bolt)
+        if (s.abilityActive && s.playerEmpireId === 'mongols' && f.owner === 1) {
+          for (let sl = -1; sl <= 1; sl++) {
+            const ox = perpCos * sl * 5;
+            const oy = perpSin * sl * 5;
+            ctx.beginPath();
+            ctx.moveTo(pos.x + ox - cos * 20, pos.y + oy - sin * 20);
+            ctx.lineTo(pos.x + ox - cos * 38, pos.y + oy - sin * 38);
+            ctx.strokeStyle = '#FF9933'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.5; ctx.stroke(); ctx.globalAlpha = 1;
+          }
+          // Lightning bolt above
+          const boltX = pos.x - perpCos * 10, boltY = pos.y - perpSin * 10;
+          const boltOp = 0.4 + 0.3 * Math.sin(now / 100);
+          ctx.fillStyle = `rgba(255,153,51,${boltOp.toFixed(2)})`;
+          ctx.beginPath();
+          ctx.moveTo(boltX - 2, boltY - 6); ctx.lineTo(boltX + 1, boltY - 1);
+          ctx.lineTo(boltX - 1, boltY - 1); ctx.lineTo(boltX + 2, boltY + 6);
+          ctx.lineTo(boltX - 1, boltY + 1); ctx.lineTo(boltX + 1, boltY + 1);
+          ctx.closePath(); ctx.fill();
+        }
+      }
+
+      // ── Particles ──
+      let particlesDrawn = 0;
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        if (!p.active || p.alpha <= 0) continue;
+        if (particlesDrawn >= perf.maxParticles) break;
+        // Particle tapers from 3px to 0
+        const pSize = (2.5 + (p.id % 3) * 0.8) * Math.max(0.1, p.alpha);
+        ctx.beginPath(); ctx.arc(p.x, p.y, pSize, 0, TWO_PI);
+        ctx.fillStyle = `rgba(${p.color},${Math.max(0, p.alpha).toFixed(2)})`; ctx.fill();
+        particlesDrawn++;
+      }
+
+      // ── UPDATE AND DRAW VFX PARTICLES ──
+      const dt = 1 / 60; // assume ~60fps timestep
+      vfxActiveCount = 0;
+      for (let i = 0; i < VFX_POOL_SIZE; i++) {
+        const vp = vfxPool[i];
+        if (!vp.active) continue;
+        vp.life += 16.67; // ~1 frame at 60fps
+        if (vp.life >= vp.maxLife) {
+          vp.active = false;
+          continue;
+        }
+        vfxActiveCount++;
+        const t = vp.life / vp.maxLife;
+        vp.alpha = 1 - t;
+
+        if (vp.type === 'spark') {
+          // Move with velocity, decelerate
+          vp.x += vp.vx * dt;
+          vp.y += vp.vy * dt;
+          vp.vx *= 0.96;
+          vp.vy *= 0.96;
+          const sparkSize = vp.size * (1 - t * 0.5);
+          ctx.beginPath();
+          ctx.arc(vp.x, vp.y, sparkSize, 0, TWO_PI);
+          ctx.fillStyle = vp.color;
+          ctx.globalAlpha = vp.alpha;
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        } else if (vp.type === 'ember') {
+          // Move with gravity
+          vp.x += vp.vx * dt;
+          vp.y += vp.vy * dt;
+          vp.vy += vp.gravity * dt;
+          vp.vx *= 0.98;
+          const emberSize = vp.size * (1 - t * 0.3);
+          ctx.beginPath();
+          ctx.arc(vp.x, vp.y, emberSize, 0, TWO_PI);
+          ctx.fillStyle = vp.color;
+          ctx.globalAlpha = vp.alpha * 0.8;
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        } else if (vp.type === 'ring') {
+          // Expanding ring
+          vp.radius = vp.maxRadius * t;
+          const ringOp = vp.alpha * 0.7;
+          if (ringOp > 0.01) {
+            ctx.beginPath();
+            ctx.arc(vp.x, vp.y, vp.radius, 0, TWO_PI);
+            ctx.strokeStyle = vp.color;
+            ctx.lineWidth = vp.strokeWidth * (1 - t * 0.5);
+            ctx.globalAlpha = ringOp;
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+          }
+        }
+      }
+
+      // ── ENHANCED Floating combat text ──
+      for (let i = 0; i < floatingTexts.length; i++) {
+        const ft = floatingTexts[i];
+        const op = ft.t < 0.15 ? ft.t / 0.15 : Math.max(0, 1 - (ft.t - 0.15) / 0.85);
+        if (op < 0.01) continue;
+
+        // Horizontal drift
+        const driftX = ft.x + Math.sin(ft.t * 6) * 5;
+
+        ctx.font = `bold ${ft.size}px sans-serif`;
+        ctx.textAlign = 'center';
+
+        // Text outline shadow for readability (draw black offset first)
+        ctx.globalAlpha = op * 0.6;
+        ctx.fillStyle = 'rgba(0,0,0,0.8)';
+        ctx.fillText(ft.text, driftX + 1, ft.y + 1);
+
+        // Main colored text
+        ctx.globalAlpha = op;
+        ctx.fillStyle = ft.color;
+        ctx.fillText(ft.text, driftX, ft.y);
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Fog of war overlay ──
+      if (fogOn) {
+        ctx.fillStyle = 'rgba(6,10,6,0.6)';
+        ctx.fillRect(0, 0, width, height);
+        ctx.globalCompositeOperation = 'destination-out';
+        for (let i = 0; i < planets.length; i++) {
+          const p = planets[i];
+          if (p.owner !== 1) continue;
+          const fogR = p.nodeType === 'watchtower' ? WATCHTOWER_RADIUS : FOG_RADIUS;
+          const fogGrad = ctx.createRadialGradient(p.x, p.y, fogR * 0.5, p.x, p.y, fogR);
+          fogGrad.addColorStop(0, 'rgba(0,0,0,1)'); fogGrad.addColorStop(0.7, 'rgba(0,0,0,0.8)'); fogGrad.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = fogGrad;
+          ctx.beginPath(); ctx.arc(p.x, p.y, fogR, 0, TWO_PI); ctx.fill();
+        }
+        ctx.globalCompositeOperation = 'source-over';
+      }
+
+      // ── Victory anticipation vignette ──
+      let playerCount = 0, totalOwned = 0;
+      for (let i = 0; i < planets.length; i++) {
+        if (planets[i].owner === 1) playerCount++;
+        if (planets[i].owner !== 0) totalOwned++;
+      }
+      if (totalOwned > 0 && playerCount / planets.length > 0.8) {
+        const vigOp = 0.06 + 0.02 * Math.sin(now / 1000);
+        const vigGrad = ctx.createRadialGradient(width / 2, height / 2, width * 0.3, width / 2, height / 2, width * 0.7);
+        vigGrad.addColorStop(0, 'rgba(255,215,0,0)');
+        vigGrad.addColorStop(1, `rgba(255,215,0,${vigOp.toFixed(3)})`);
+        ctx.fillStyle = vigGrad; ctx.fillRect(0, 0, width, height);
+      }
+
+      // ── Close battle red vignette ──
+      let closeBattle = false;
+      for (let i = 0; i < planets.length; i++) {
+        if (planets[i].units <= 3 && planets[i].owner !== 0) {
+          const isUnderAttack = underAttackAny.has(planets[i].id);
+          if (isUnderAttack) { closeBattle = true; break; }
+        }
+      }
+      if (closeBattle) {
+        const redOp = 0.04 + 0.03 * Math.sin(now / 200);
+        const redVig = ctx.createRadialGradient(width / 2, height / 2, width * 0.35, width / 2, height / 2, width * 0.65);
+        redVig.addColorStop(0, 'rgba(255,0,0,0)');
+        redVig.addColorStop(1, `rgba(255,0,0,${redOp.toFixed(3)})`);
+        ctx.fillStyle = redVig; ctx.fillRect(0, 0, width, height);
+      }
+
+      // ── ENHANCED FPS counter ──
+      const qualityMode = degraded ? 'LQ' : 'HQ';
+      ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.font = '9px monospace'; ctx.textAlign = 'left';
+      ctx.fillText(`${fp.fps} FPS | ${particlesDrawn}P | ${qualityMode}`, 6, 12);
+
+      rafRef.current = requestAnimationFrame(frame);
+    }
+
+    rafRef.current = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [width, height, drawBg, eColor, eGlow, eAccent, eUnitColor, eShape, eUnitShape]);
+
+  if (Platform.OS !== 'web') {
+    return (
+      <View style={{ width, height, backgroundColor: '#0A140A' }} {...panResponder.panHandlers}>
+        <Text style={{ color: '#555', textAlign: 'center', marginTop: 40 }}>Canvas rendering requires web</Text>
+      </View>
+    );
+  }
 
   return (
-    <Animated.View style={{ width, height, transform: [{ translateX: shakeX }, { translateY: shakeY }] }}>
-      <Svg
-        width={width} height={height}
-        style={[StyleSheet.absoluteFill, { pointerEvents: 'none' } as any]}
-      >
-        <Defs>
-          {visiblePlanets.map(p => (
-            <RadialGradient key={`rg${p.id}`} id={`rg${p.id}`} cx="40%" cy="40%" r="60%">
-              <Stop offset="0%"   stopColor={effectiveColor(p.owner)} stopOpacity="0.35" />
-              <Stop offset="60%"  stopColor={effectiveColor(p.owner)} stopOpacity="0.09" />
-              <Stop offset="100%" stopColor={effectiveColor(p.owner)} stopOpacity="0" />
-            </RadialGradient>
-          ))}
-          {fleets.map(fleet => {
-            const gc = effectiveColor(fleet.owner as 0|1|2);
-            return (
-              <RadialGradient key={`fg${fleet.id}`} id={`fg${fleet.id}`} cx="50%" cy="50%" r="50%">
-                <Stop offset="0%"   stopColor={gc} stopOpacity="0.90" />
-                <Stop offset="50%"  stopColor={gc} stopOpacity="0.35" />
-                <Stop offset="100%" stopColor={gc} stopOpacity="0" />
-              </RadialGradient>
-            );
-          })}
-          {/* Vignette gradient — dark edges, lighter center */}
-          <RadialGradient id="vignette" cx="50%" cy="50%" r="70%">
-            <Stop offset="0%"   stopColor="#000000" stopOpacity="0" />
-            <Stop offset="70%"  stopColor="#000000" stopOpacity="0" />
-            <Stop offset="100%" stopColor="#000000" stopOpacity="0.52" />
-          </RadialGradient>
-        </Defs>
-
-        {/* ─── Terrain features ─── */}
-        {[
-          { x: width*0.12, y: height*0.28, r: 9,  color: '55,42,28',  a: 0.28 },
-          { x: width*0.14, y: height*0.30, r: 6,  color: '50,38,25',  a: 0.22 },
-          { x: width*0.84, y: height*0.33, r: 11, color: '55,42,28',  a: 0.26 },
-          { x: width*0.87, y: height*0.31, r: 7,  color: '48,36,22',  a: 0.20 },
-          { x: width*0.38, y: height*0.80, r: 8,  color: '52,40,26',  a: 0.24 },
-          { x: width*0.40, y: height*0.82, r: 5,  color: '50,38,24',  a: 0.18 },
-          { x: width*0.65, y: height*0.14, r: 10, color: '55,42,28',  a: 0.24 },
-          { x: width*0.62, y: height*0.16, r: 6,  color: '48,36,22',  a: 0.18 },
-          { x: width*0.06, y: height*0.48, r: 22, color: '20,40,18',  a: 0.40 },
-          { x: width*0.09, y: height*0.46, r: 14, color: '18,36,16',  a: 0.30 },
-          { x: width*0.94, y: height*0.52, r: 20, color: '20,40,18',  a: 0.38 },
-          { x: width*0.92, y: height*0.55, r: 13, color: '18,34,16',  a: 0.28 },
-          { x: width*0.50, y: height*0.06, r: 18, color: '20,38,16',  a: 0.34 },
-          { x: width*0.48, y: height*0.09, r: 11, color: '18,36,15',  a: 0.24 },
-          { x: width*0.52, y: height*0.94, r: 16, color: '20,38,16',  a: 0.32 },
-        ].map((t, i) => (
-          <Circle key={`terr${i}`} cx={t.x} cy={t.y} r={t.r}
-            fill={`rgba(${t.color},${t.a})`} />
-        ))}
-
-        {/* ─── Star sparkles ─── */}
-        {STAR_POSITIONS.map((sp, i) => {
-          const twinkle = 0.5 + 0.5 * Math.sin(now / (1200 + i * 337) + i * 2.1);
-          const r = 1 + (i % 2) * 0.8;
-          return (
-            <Circle key={`star${i}`} cx={sp.x * width} cy={sp.y * height}
-              r={r} fill="rgba(255,240,200,1)" opacity={twinkle * 0.48} />
-          );
-        })}
-
-        {/* ─── Dot grid ─── */}
-        {dotGrid.map((d, i) => (
-          <Circle key={`dg${i}`} cx={d.x} cy={d.y} r={0.7} fill="rgba(255,230,130,0.05)" />
-        ))}
-
-        {/* ─── Fog layer ─── */}
-        {fog1x + 220 > 0 && fog1x - 220 < width && <Ellipse cx={fog1x} cy={fog1y} rx={220} ry={130} fill="rgba(80,110,60,0.04)" />}
-        {fog1x + 185 > 0 && fog1x - 185 < width && <Ellipse cx={fog1x + 35} cy={fog1y - 22} rx={150} ry={88} fill="rgba(90,120,55,0.03)" />}
-        {fog2x + 260 > 0 && fog2x - 260 < width && <Ellipse cx={fog2x} cy={fog2y} rx={260} ry={148} fill="rgba(60,90,45,0.04)" />}
-        {fog3x + 190 > 0 && fog3x - 190 < width && <Ellipse cx={fog3x} cy={fog3y} rx={190} ry={112} fill="rgba(100,120,65,0.034)" />}
-        {fog4x + 200 > 0 && fog4x - 200 < width && <Ellipse cx={fog4x} cy={fog4y} rx={200} ry={118} fill="rgba(70,100,55,0.038)" />}
-
-        {/* ─── Ghost castles ─── */}
-        {ghostPlanets.map(p => {
-          const nearestDist = Math.min(...playerPlanets.map(pp => Math.hypot(pp.x - p.x, pp.y - p.y)));
-          const fade = 1 - (nearestDist - FOG_RADIUS) / (GHOST_RADIUS - FOG_RADIUS);
-          const opacity = Math.max(0, Math.min(0.14, fade * 0.14));
-          return (
-            <G key={`ghost${p.id}`}>
-              <Path d={castleOutlinePath(p.x, p.y, p.radius * 0.7)}
-                fill={effectiveColor(p.owner)} opacity={opacity} />
-            </G>
-          );
-        })}
-
-        {/* ─── Fleet arcs ─── */}
-        {fleets.map(fleet => {
-          const from = planets.find(p => p.id === fleet.fromId);
-          const to = planets.find(p => p.id === fleet.toId);
-          if (!from || !to) return null;
-          const { cx: cpx, cy: cpy } = bezierControlPoint(from.x, from.y, to.x, to.y, fleet.arc);
-          const glow = effectiveGlow(fleet.owner as 0|1|2);
-          return (
-            <Path key={`arc${fleet.id}`}
-              d={bezierPathStr(from.x, from.y, cpx, cpy, to.x, to.y)}
-              stroke={`rgba(${glow},0.07)`} strokeWidth={1.5} fill="none"
-              strokeDasharray="5 10"
-            />
-          );
-        })}
-
-        {/* ─── Single-select targeting line ─── */}
-        {selectedPlanet && showTargeting && (
-          <G>
-            <Line x1={selectedPlanet.x} y1={selectedPlanet.y} x2={pointerPos.x} y2={pointerPos.y}
-              stroke="rgba(255,200,30,0.14)" strokeWidth={14} strokeLinecap="round" />
-            <Line x1={selectedPlanet.x} y1={selectedPlanet.y} x2={pointerPos.x} y2={pointerPos.y}
-              stroke="#FFCC22" strokeWidth={2.2} strokeDasharray="10 7"
-              strokeDashoffset={dashOffset} opacity={0.9} />
-            <Polygon
-              points={arrowheadPoints(selectedPlanet.x, selectedPlanet.y, pointerPos.x, pointerPos.y)}
-              fill="#FFCC22" opacity={0.95} />
-            {previewUnits > 0 && (
-              <G>
-                <Circle cx={pointerPos.x + 20} cy={pointerPos.y - 18} r={14}
-                  fill="rgba(20,12,4,0.92)" stroke="#FFCC22" strokeWidth={1.5} />
-                <SvgText x={pointerPos.x + 20} y={pointerPos.y - 13}
-                  textAnchor="middle" fontSize={10} fontWeight="bold" fill="#FFCC22">
-                  {previewUnits}
-                </SvgText>
-              </G>
-            )}
-          </G>
-        )}
-
-        {/* ─── ALL-select targeting lines ─── */}
-        {allSelected && showTargeting && playerPlanets.map((planet, i) => (
-          <G key={`al${planet.id}`}>
-            <Line x1={planet.x} y1={planet.y} x2={pointerPos.x} y2={pointerPos.y}
-              stroke="rgba(255,200,30,0.1)" strokeWidth={10} strokeLinecap="round" />
-            <Line x1={planet.x} y1={planet.y} x2={pointerPos.x} y2={pointerPos.y}
-              stroke="#FFCC22" strokeWidth={1.8} strokeDasharray="10 7"
-              strokeDashoffset={dashOffset - i * 5} opacity={0.6} />
-          </G>
-        ))}
-        {allSelected && showTargeting && playerPlanets.length > 0 && (
-          <G>
-            <Polygon
-              points={arrowheadPoints(pointerPos.x, pointerPos.y - 30, pointerPos.x, pointerPos.y)}
-              fill="#FFCC22" opacity={0.92} />
-            <Circle cx={pointerPos.x + 20} cy={pointerPos.y - 18} r={16}
-              fill="rgba(20,12,4,0.92)" stroke="#FFCC22" strokeWidth={1.5} />
-            <SvgText x={pointerPos.x + 20} y={pointerPos.y - 12}
-              textAnchor="middle" fontSize={9} fontWeight="bold" fill="#FFCC22">
-              ALL
-            </SvgText>
-          </G>
-        )}
-
-        {/* ─── Conquest flashes — 3 rings staggered 80ms apart ─── */}
-        {conquestFlashes.map(cf => {
-          const empireColor = effectiveColor(cf.owner);
-          const rings = [
-            { tOffset: 0,     maxR: 72, sw: 4,   opScale: 0.88 },
-            { tOffset: -0.13, maxR: 96, sw: 2.5, opScale: 0.55 },
-            { tOffset: -0.26, maxR: 58, sw: 1.5, opScale: 0.35 },
-          ];
-          const baseEased = 1 - Math.pow(1 - cf.t, 2);
-          return (
-            <G key={cf.id}>
-              {rings.map((ring, ri) => {
-                const rt = Math.max(0, cf.t + ring.tOffset);
-                const eased = 1 - Math.pow(1 - rt, 2);
-                const rr = 12 + eased * ring.maxR;
-                const op = Math.max(0, 1 - rt) * ring.opScale;
-                if (op <= 0.01) return null;
-                return (
-                  <Circle key={ri} cx={cf.x} cy={cf.y} r={rr} fill="none"
-                    stroke={empireColor} strokeWidth={ring.sw - rt * (ring.sw * 0.7)}
-                    opacity={op} />
-                );
-              })}
-              {/* Center fill burst */}
-              <Circle cx={cf.x} cy={cf.y} r={10 + baseEased * 40}
-                fill={empireColor} opacity={Math.max(0, 0.22 - cf.t * 0.22)} />
-            </G>
-          );
-        })}
-
-        {/* ─── Impact flashes ─── */}
-        {impactFlashes.map(inf => {
-          const eased = 1 - Math.pow(1 - inf.t, 3);
-          const r = 6 + eased * 24;
-          const opacity = Math.max(0, 1 - inf.t);
-          return (
-            <G key={inf.id}>
-              <Circle cx={inf.x} cy={inf.y} r={r} fill="none"
-                stroke="rgba(255,240,160,0.95)" strokeWidth={2.5 - inf.t * 2} opacity={opacity} />
-              <Circle cx={inf.x} cy={inf.y} r={r * 0.55}
-                fill="rgba(255,240,160,0.25)" opacity={opacity * 0.6} />
-            </G>
-          );
-        })}
-
-        {/* ─── Castle / Empire nodes ─── */}
-        {visiblePlanets.map(planet => {
-          const nodeEmp = empireOf(planet.owner);
-          const color = effectiveColor(planet.owner);
-          const glow  = effectiveGlow(planet.owner);
-          const glowDark = effectiveGlowDark(planet.owner);
-          const stone = effectiveStone(planet.owner);
-          const r = planet.radius;
-          const isSelected = planet.id === selectedPlanetId || (allSelected && planet.owner === 1);
-          const isHovered = hoveredPlanet?.id === planet.id;
-          const isUnderAttack = underAttackIds.has(planet.id) && planet.owner === 1;
-
-          const breathPhase = Math.sin((now / 1400) + planet.id * 0.72);
-          const glowHaloR = r * (1.625 + 0.09 * breathPhase) * atmospherePulse;
-          const breathScale = 0.97 + 0.03 * (1 + Math.sin(now / 318 + planet.id * 0.72));
-          const selGlowOpacity = isSelected ? 0.4 + 0.4 * (0.5 + 0.5 * Math.sin(now / 159)) : 0;
-
-          const shimmerT = ((now / 1700) + planet.id * 0.41) % 1;
-          const showShimmer = shimmerT < 0.5 && planet.owner !== 0;
-          const shimmerR = r + shimmerT * 14;
-          const shimmerOpacity = 0.42 * Math.sin(shimmerT * Math.PI);
-
-          const nearImpact = impactFlashes.find(inf =>
-            Math.hypot(inf.x - planet.x, inf.y - planet.y) < r + 18
-          );
-          const shakeAmt = nearImpact ? 2.8 * (1 - nearImpact.t) : 0;
-          const shakeAngle = nearImpact ? nearImpact.t * Math.PI * 10 : 0;
-          const px = planet.x + Math.cos(shakeAngle) * shakeAmt;
-          const py = planet.y + Math.sin(shakeAngle) * shakeAmt * 0.6;
-
-          const capTrans = captureTransRef.current.get(planet.id);
-          const prevColor = capTrans ? effectiveColor(capTrans.prevOwner) : null;
-          const bodyOpacity = capTrans ? capTrans.t : 1;
-
-          // Node shape and flag — empire-specific or default castle
-          const nodeShapeId = nodeEmp?.nodeShape;
-          const nodePath = nodeShapeId === 'pyramid' ? pyramidPath(px, py, r)
-            : nodeShapeId === 'colosseum' ? colosseumPath(px, py, r)
-            : nodeShapeId === 'yurt'      ? yurtPath(px, py, r)
-            : nodeShapeId === 'sphinx'    ? sphinxPath(px, py, r)
-            : castleOutlinePath(px, py, r);
-          const isColosseum = nodeShapeId === 'colosseum';
-          const { pole, flag: flagPts } = nodeEmp
-            ? empireNodeFlag(px, py, r, nodeEmp.nodeShape)
-            : castleKeepFlag(px, py, r);
-          const garrisonY = nodeShapeId === 'pyramid'   ? py + r * 0.12 + 5
-            : nodeShapeId === 'colosseum' ? py + r * 0.08 + 5
-            : nodeShapeId === 'yurt'      ? py + r * 0.14 + 5
-            : nodeShapeId === 'sphinx'    ? py - r * 0.08 + 5
-            : py - r * 0.48 + 4;
-
-          const arcR = r + 6;
-          const arcCircumf = 2 * Math.PI * arcR;
-          const arcFill = Math.min(1, planet.units / 99);
-          const arcDash = arcFill * arcCircumf;
-          const arcOffset = arcCircumf * 0.25;
-
-          return (
-            <G key={planet.id}>
-              {/* Breathing outer halo */}
-              <Circle cx={px} cy={py} r={glowHaloR} fill={`url(#rg${planet.id})`} />
-
-              {/* Garrison strength arc track */}
-              <Circle cx={px} cy={py} r={arcR} fill="none"
-                stroke={`rgba(${glow},0.10)`} strokeWidth={2} />
-              {/* Garrison strength arc fill */}
-              {arcFill > 0.01 && (
-                <Circle cx={px} cy={py} r={arcR} fill="none"
-                  stroke={`rgba(${glow},0.60)`} strokeWidth={2}
-                  strokeDasharray={`${arcDash.toFixed(1)} ${arcCircumf.toFixed(1)}`}
-                  strokeDashoffset={arcOffset.toFixed(1)}
-                  strokeLinecap="round" />
-              )}
-
-              {/* Unit generation shimmer ring */}
-              {showShimmer && (
-                <Circle cx={px} cy={py} r={shimmerR} fill="none"
-                  stroke={`rgba(${glow},${shimmerOpacity.toFixed(2)})`} strokeWidth={1.8} />
-              )}
-
-              {/* Incoming attack warning */}
-              {isUnderAttack && (
-                <>
-                  <Circle cx={px} cy={py} r={(r + 20) * warnPulse}
-                    fill="none" stroke="rgba(238,100,0,0.65)" strokeWidth={2.5} />
-                  <Circle cx={px} cy={py} r={r + 9}
-                    fill="none" stroke="rgba(238,80,0,0.3)" strokeWidth={1.5}
-                    strokeDasharray="4 5" strokeDashoffset={-dashOffset} />
-                </>
-              )}
-
-              {/* Hover ring */}
-              {isHovered && (
-                <>
-                  <Circle cx={px} cy={py} r={r + 22}
-                    fill="none" stroke="rgba(255,210,40,0.65)" strokeWidth={2.5} />
-                  <Circle cx={px} cy={py} r={r + 30 + 3 * Math.sin(now / 130)}
-                    fill="none" stroke="rgba(255,200,30,0.22)" strokeWidth={1.5} />
-                </>
-              )}
-
-              {/* Selection rings */}
-              {isSelected && (
-                <>
-                  <Circle cx={px} cy={py} r={r + 36} fill="rgba(255,200,30,0.06)" />
-                  <Circle cx={px} cy={py} r={(r + 28) * selectPulse}
-                    fill="none"
-                    stroke={allSelected ? 'rgba(255,210,40,0.70)' : 'rgba(255,210,40,0.55)'}
-                    strokeWidth={allSelected ? 3 : 2.5} />
-                  <Circle cx={px} cy={py} r={r + 14}
-                    fill="none" stroke="#FFCC22" strokeWidth={2}
-                    strokeDasharray="7 4" strokeDashoffset={dashOffset * 1.4} opacity={0.9} />
-                </>
-              )}
-
-              {/* Owner-color pulsing glow ring */}
-              {isSelected && (
-                <Circle cx={px} cy={py} r={r + 46}
-                  fill="none" stroke={color} strokeWidth={3} opacity={selGlowOpacity} />
-              )}
-
-              {/* ── Node body (breathing scale 0.97→1.03) ── */}
-              <G transform={`translate(${px.toFixed(1)},${py.toFixed(1)}) scale(${breathScale.toFixed(4)}) translate(${(-px).toFixed(1)},${(-py).toFixed(1)})`}>
-                {/* Body — crossfade on capture */}
-                {prevColor && (
-                  <Path d={nodePath} fill={prevColor} opacity={1 - bodyOpacity}
-                    fillRule={isColosseum ? 'evenodd' : 'nonzero'} />
-                )}
-                <Path d={nodePath} fill={color} opacity={bodyOpacity}
-                  fillRule={isColosseum ? 'evenodd' : 'nonzero'} />
-
-                {/* Impact white flash (80ms) */}
-                {nearImpact && nearImpact.t < 0.42 && (
-                  <Path d={nodePath}
-                    fill={`rgba(255,255,255,${Math.max(0, 0.72 * (1 - nearImpact.t / 0.42)).toFixed(2)})`}
-                    fillRule={isColosseum ? 'evenodd' : 'nonzero'} />
-                )}
-
-                {/* Stone outline */}
-                <Path d={nodePath} fill="none" stroke={stone} strokeWidth={1.5} opacity={0.7}
-                  fillRule={isColosseum ? 'evenodd' : 'nonzero'} />
-
-                {/* Shadow shading */}
-                <Circle cx={px + r * 0.32} cy={py - r * 0.28} r={r * 0.95}
-                  fill={`rgba(${glowDark},0.45)`} />
-
-                {/* Interior light glow */}
-                <Circle cx={px} cy={py - r * 0.35} r={r * 0.10}
-                  fill="rgba(255,170,50,0.88)" />
-
-                {/* Flag pole and pennant */}
-                <Path d={pole} stroke={stone} strokeWidth={1.5} opacity={0.9} />
-                <Polygon points={flagPts} fill={color} opacity={0.95} />
-
-                {/* Garrison count */}
-                <SvgText x={px} y={garrisonY}
-                  textAnchor="middle" fontSize={11} fontWeight="bold"
-                  fill="#FFFFFF" opacity={0.95}>
-                  {Math.floor(planet.units)}
-                </SvgText>
-              </G>
-            </G>
-          );
-        })}
-
-        {/* ─── Army fleets ─── */}
-        {fleets.map(fleet => {
-          const from = planets.find(p => p.id === fleet.fromId);
-          const to = planets.find(p => p.id === fleet.toId);
-          if (!from || !to) return null;
-          const { x: fx, y: fy, angle, cx: cpx, cy: cpy } = fleetPos(fleet, from, to);
-          const fleetEmpire = empireOf(fleet.owner as 0|1|2);
-          const color = effectiveColor(fleet.owner as 0|1|2);
-          const unitColor = effectiveUnitColor(fleet.owner as 0|1|2);
-          const glow = effectiveGlow(fleet.owner as 0|1|2);
-
-          const bobPhase = Math.sin((now / 200) + fleet.id * 1.42);
-          const perpAngle = angle + Math.PI / 2;
-          const bobAmt = bobPhase * 1.8;
-          const bx = fx + Math.cos(perpAngle) * bobAmt;
-          const by = fy + Math.sin(perpAngle) * bobAmt;
-
-          const trailOffsets = [0.03, 0.07, 0.12, 0.18, 0.25, 0.33];
-          const unitSz = 7;
-          const trailPoints = trailOffsets.map((offset, i) => ({
-            pt: bezierPoint(Math.max(0, fleet.progress - offset), from.x, from.y, cpx, cpy, to.x, to.y),
-            i,
-          }));
-
-          const aheadT = Math.min(1, fleet.progress + 0.06);
-          const ahead = bezierPoint(aheadT, from.x, from.y, cpx, cpy, to.x, to.y);
-
-          const perpX = -Math.sin(angle) * 14;
-          const perpY = Math.cos(angle) * 14;
-
-          return (
-            <G key={fleet.id}>
-              {/* Dust trail — wider, more visible */}
-              {trailPoints.map(({ pt, i }) => (
-                <Circle key={i} cx={pt.x} cy={pt.y}
-                  r={Math.max(0.6, unitSz * (1 - i * 0.12))}
-                  fill={`rgba(${glow},${Math.max(0, 0.50 - i * 0.082).toFixed(2)})`} />
-              ))}
-
-              {/* Approach sparkle */}
-              <Circle cx={ahead.x} cy={ahead.y} r={10} fill={`rgba(${glow},0.10)`} />
-
-              {/* Radial glow rings */}
-              <Circle cx={bx} cy={by} r={26} fill={`url(#fg${fleet.id})`} />
-              <Circle cx={bx} cy={by} r={15} fill={`url(#fg${fleet.id})`} />
-
-              {/* Empire-specific unit body */}
-              {fleetEmpire?.unitShape === 'scarab'  && renderScarabUnit(bx, by, angle, 7, unitColor)}
-              {fleetEmpire?.unitShape === 'shield'  && renderShieldUnit(bx, by, angle, 7, unitColor)}
-              {fleetEmpire?.unitShape === 'horse'   && renderHorseUnit(bx, by, angle, 7, unitColor)}
-              {fleetEmpire?.unitShape === 'ankh'    && renderAnkhUnit(bx, by, 7, unitColor)}
-              {!fleetEmpire && <Polygon points={troopPolygon(bx, by, angle, 7)} fill={color} />}
-
-              {/* Pennant flag */}
-              <Polygon points={fleetFlagPoints(bx, by, angle, 7)} fill={color} opacity={0.9} />
-
-              {/* Unit count badge */}
-              <Circle cx={bx + perpX} cy={by + perpY} r={10}
-                fill="rgba(8,6,2,0.75)" stroke={color} strokeWidth={1} />
-              <SvgText x={bx + perpX} y={by + perpY + 3.5}
-                textAnchor="middle" fontSize={9} fontWeight="bold"
-                fill={color} opacity={0.95}>
-                {fleet.units}
-              </SvgText>
-            </G>
-          );
-        })}
-
-        {/* ─── Battle particles (empire-colored) ─── */}
-        {particles.map(p => {
-          const rgb = p.owner === 1 ? effectiveGlow(1)
-                    : p.owner === 2 ? effectiveGlow(2)
-                    : p.color;
-          return (
-            <Circle key={p.id} cx={p.x} cy={p.y}
-              r={2.5 + (p.id % 3) * 0.8}
-              fill={`rgba(${rgb},${Math.max(0, p.alpha).toFixed(2)})`} />
-          );
-        })}
-
-        {/* ─── Vignette overlay (dark edges, lighter center) ─── */}
-        <Rect x={0} y={0} width={width} height={height} fill="url(#vignette)" />
-      </Svg>
-
-      <View style={[StyleSheet.absoluteFill, styles.touchLayer]} {...panResponder.panHandlers} />
-    </Animated.View>
+    <View style={{ width, height }}>
+      <canvas ref={bgCanvasRef as any} style={{ position: 'absolute', top: 0, left: 0, width, height } as any} />
+      <canvas ref={canvasRef as any} style={{ position: 'absolute', top: 0, left: 0, width, height } as any} />
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: 'transparent' }]} {...panResponder.panHandlers} />
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  touchLayer: { backgroundColor: 'transparent' },
-});

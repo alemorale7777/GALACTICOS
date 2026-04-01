@@ -15,6 +15,8 @@ import { EmpireConfig, EmpireId, EMPIRE_CONFIG, EMPIRE_IDS } from '@/constants/e
 
 interface Props {
   onSelect: (empireId: EmpireId) => void;
+  empireMastery?: Record<EmpireId, number>;
+  empireXP?: Record<EmpireId, number>;
 }
 
 // ── Empire emblem SVG shapes ─────────────────────────────────────────────────
@@ -125,11 +127,35 @@ function PtolemiacEmblem({ size, color }: { size: number; color: string }) {
   );
 }
 
+function JapanEmblem({ size, color }: { size: number; color: string }) {
+  const cx = size / 2, cy = size / 2, r = size * 0.38;
+  const pillarW = r * 0.12;
+  const gateW = r * 0.7;
+  const topY = cy - r * 0.6;
+  const midY = cy - r * 0.15;
+  const botY = cy + r * 0.5;
+  return (
+    <Svg width={size} height={size}>
+      {/* Pillars */}
+      <Rect x={cx - gateW - pillarW / 2} y={midY} width={pillarW} height={botY - midY} fill={color} opacity={0.9} />
+      <Rect x={cx + gateW - pillarW / 2} y={midY} width={pillarW} height={botY - midY} fill={color} opacity={0.9} />
+      {/* Top beam */}
+      <Path d={`M${cx - gateW - r * 0.15},${topY + r * 0.08} Q${cx},${topY - r * 0.08} ${cx + gateW + r * 0.15},${topY + r * 0.08} L${cx + gateW + r * 0.15},${topY + r * 0.16} Q${cx},${topY + r * 0.02} ${cx - gateW - r * 0.15},${topY + r * 0.16} Z`}
+        fill={color} opacity={0.9} />
+      {/* Middle beam */}
+      <Rect x={cx - gateW} y={midY} width={gateW * 2} height={r * 0.08} fill={color} opacity={0.7} />
+      {/* Sun circle */}
+      <Circle cx={cx} cy={cy + r * 0.05} r={r * 0.2} fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth={1} />
+    </Svg>
+  );
+}
+
 const EMBLEM_RENDERERS: Record<EmpireId, (s: number, c: string) => React.ReactElement> = {
   egypt: (s, c) => <EgyptEmblem size={s} color={c} />,
   rome: (s, c) => <RomeEmblem size={s} color={c} />,
   mongols: (s, c) => <MongolsEmblem size={s} color={c} />,
   ptolemaic: (s, c) => <PtolemiacEmblem size={s} color={c} />,
+  japan: (s, c) => <JapanEmblem size={s} color={c} />,
 };
 
 // ── Leader card ───────────────────────────────────────────────────────────────
@@ -137,10 +163,12 @@ function LeaderCard({
   empire,
   anim,
   onSelect,
+  masteryLevel,
 }: {
   empire: EmpireConfig;
   anim: Animated.Value;
   onSelect: () => void;
+  masteryLevel?: number;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
 
@@ -176,6 +204,17 @@ function LeaderCard({
       </Text>
       <Text style={styles.leaderName} numberOfLines={1}>{empire.leader}</Text>
 
+      {/* Mastery level */}
+      {masteryLevel !== undefined && masteryLevel > 1 && (
+        <View style={styles.masteryRow}>
+          <Text style={[styles.masteryLvl, { color: empire.cardAccent }]}>Lv {masteryLevel}</Text>
+          {masteryLevel >= 5 && <Text style={styles.masteryStar}>{'\u2605'}</Text>}
+          {masteryLevel >= 10 && <Text style={styles.masteryStar}>{'\u2605'}</Text>}
+          {masteryLevel >= 25 && <Text style={styles.masteryStar}>{'\u2605'}</Text>}
+          {masteryLevel >= 50 && <Text style={[styles.masteryStar, { color: '#FF2D55' }]}>{'\u2605'}</Text>}
+        </View>
+      )}
+
       {/* Select button */}
       <TouchableOpacity
         style={[styles.selectBtn, { borderColor: empire.cardAccent, backgroundColor: empire.cardAccent + '22' }]}
@@ -188,7 +227,7 @@ function LeaderCard({
 }
 
 // ── Main screen ───────────────────────────────────────────────────────────────
-export default function LeaderSelect({ onSelect }: Props) {
+export default function LeaderSelect({ onSelect, empireMastery }: Props) {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : insets.bottom;
@@ -228,6 +267,7 @@ export default function LeaderSelect({ onSelect }: Props) {
             empire={EMPIRE_CONFIG[id]}
             anim={cardAnims[i]}
             onSelect={() => onSelect(id)}
+            masteryLevel={empireMastery?.[id]}
           />
         ))}
       </ScrollView>
@@ -273,34 +313,44 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '47%',
-    backgroundColor: 'rgba(255,220,80,0.03)',
-    borderRadius: 18, borderWidth: 1,
-    paddingVertical: 18, paddingHorizontal: 12,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 16, borderWidth: 1.5,
+    paddingVertical: 16, paddingHorizontal: 12,
     alignItems: 'center', gap: 8,
     overflow: 'hidden',
   },
   cardColorBar: {
-    position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, opacity: 0.8,
+    position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, opacity: 0.9,
   },
   emblemWrap: {
-    width: 88, height: 88, borderRadius: 44,
+    width: 80, height: 80, borderRadius: 40,
     justifyContent: 'center', alignItems: 'center',
     marginBottom: 4,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
   },
   empireName: {
-    fontSize: 11, fontFamily: 'Inter_700Bold',
-    letterSpacing: 1.5, textAlign: 'center',
+    fontSize: 12, fontFamily: 'Inter_700Bold',
+    letterSpacing: 2, textAlign: 'center',
   },
   leaderName: {
     fontSize: 13, fontFamily: 'Inter_600SemiBold',
     color: 'rgba(255,230,160,0.75)', textAlign: 'center',
   },
   selectBtn: {
-    marginTop: 6, width: '90%',
-    paddingVertical: 10, borderRadius: 12,
+    marginTop: 6, width: '92%',
+    paddingVertical: 11, borderRadius: 10,
     borderWidth: 1.5, alignItems: 'center',
   },
   selectText: {
-    fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 2,
+    fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 2.5,
+  },
+  masteryRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+  },
+  masteryLvl: {
+    fontSize: 10, fontFamily: 'Inter_600SemiBold', letterSpacing: 0.5,
+  },
+  masteryStar: {
+    fontSize: 10, color: '#FFD700',
   },
 });

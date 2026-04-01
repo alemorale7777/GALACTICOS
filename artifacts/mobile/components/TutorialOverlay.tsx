@@ -20,31 +20,31 @@ const STEPS = [
   {
     icon: 'shield' as const,
     title: 'Your Castles',
-    body: 'Green castles belong to your kingdom. They train soldiers over time. The number shows your current garrison.',
+    body: 'Your castles train soldiers over time. The number shows your garrison. Capital castles (crown icon) are extra powerful — lose yours and you lose instantly!',
     color: Colors.playerPlanet,
   },
   {
     icon: 'move' as const,
     title: 'March & Conquer',
-    body: 'Touch and hold your castle, then drag to an enemy or neutral castle to send an army. Outnumber the defenders to capture it.',
+    body: 'Touch your castle and drag to a target to send troops. Outnumber defenders to capture. Fortress nodes need extra troops, Barracks produce faster, and Ruins transform into Barracks once captured.',
     color: Colors.lineColor,
   },
   {
     icon: 'sliders' as const,
     title: 'Army Size & Select All',
-    body: 'Choose 25%, 50%, or 75% of your garrison. Tap ALL to select every castle at once — then drag anywhere to march from all of them simultaneously.',
+    body: 'Choose 25%, 50%, or 75% of your garrison. Tap ALL to select every castle — then drag to march from all simultaneously.',
     color: '#FFAA00',
   },
   {
     icon: 'zap' as const,
-    title: 'War Cry Ability',
-    body: 'Press WAR CRY to instantly double your garrison on all castles. It has a 30-second cooldown — use it at the right moment.',
+    title: 'Empire Abilities',
+    body: 'Each empire has a unique ability with its own cooldown. Egypt boosts production, Rome shields fleets, Mongols gain speed, Ptolemaic creates illusions. Time it right!',
     color: Colors.abilityReady,
   },
   {
     icon: 'flag' as const,
     title: 'Claim the Realm',
-    body: 'Capture every enemy castle to win the realm. Lose all your castles and your kingdom falls. Fog of war hides distant strongholds.',
+    body: 'Capture the enemy Capital for instant victory, or eliminate all enemy castles. Choose your map size — larger maps have fog of war hiding distant strongholds. Watchtower nodes reveal more area.',
     color: '#FFD700',
   },
 ];

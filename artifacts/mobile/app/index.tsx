@@ -1,84 +1,119 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, StyleSheet, View } from 'react-native';
+import { Animated, Platform, StyleSheet, View } from 'react-native';
 
 import GameCanvas from '@/components/GameCanvas';
 import GameOverlay from '@/components/GameOverlay';
 import { BottomHUD, TopHUD } from '@/components/HUD';
 import LeaderSelect from '@/components/LeaderSelect';
+import MapSizeSelect from '@/components/MapSizeSelect';
 import StarField from '@/components/StarField';
 import StartScreen from '@/components/StartScreen';
 import TutorialOverlay from '@/components/TutorialOverlay';
+import TournamentScreen from '@/components/TournamentScreen';
+import CampaignScreen from '@/components/CampaignScreen';
+import WorldMapScreen from '@/components/WorldMapScreen';
+import ClanScreen from '@/components/ClanScreen';
+import ReplayScreen from '@/components/ReplayScreen';
+import LocalMultiplayerSetup from '@/components/LocalMultiplayerSetup';
+
 import { Colors } from '@/constants/colors';
-import { EmpireConfig, EmpireId, EMPIRE_CONFIG, randomEmpireExcluding } from '@/constants/empires';
+import { EmpireConfig, EmpireId, MapSize, EMPIRE_CONFIG, randomEmpireExcluding } from '@/constants/empires';
+import { CAMPAIGNS } from '@/hooks/useCampaign';
 import { Difficulty, FleetPercent, GameProvider, useGame } from '@/context/GameContext';
 import { useGameStorage } from '@/hooks/useGameStorage';
+import { useRankedSeason } from '@/hooks/useRankedSeason';
+import { useDailyChallenges } from '@/hooks/useDailyChallenges';
+import { useSoundEngine } from '@/hooks/useSoundEngine';
+import { useReplaySystem } from '@/hooks/useReplaySystem';
+import { useWorldMap } from '@/hooks/useWorldMap';
+import { useCampaign } from '@/hooks/useCampaign';
+import { useTournament } from '@/hooks/useTournament';
+import { useClanSystem } from '@/hooks/useClanSystem';
 
-type AppScreen = 'start' | 'leader' | 'tutorial' | 'game';
+type AppScreen = 'start' | 'leader' | 'mapsize' | 'tutorial' | 'game'
+  | 'tournament' | 'campaign' | 'worldmap' | 'clan' | 'replays' | 'localmulti';
 
-// ─── Inner game view (needs GameProvider in tree) ──────────────────────────
+// ─── Inner game view ──────────────────────────────────────────────────────
 interface GameViewProps {
   onMenu: () => void;
+  onChangeEmpire: () => void;
+  onGameEnd: (won: boolean, elapsedMs: number, nodesCaptures: number, abilityUsed: boolean) => void;
   playerEmpire: EmpireConfig | null;
   aiEmpire: EmpireConfig | null;
 }
 
 const COMBO_LABELS = ['', 'CONQUISTA!', 'DOUBLE RAID!', 'TRIPLE STRIKE!', 'UNSTOPPABLE!', 'GODLIKE!'];
 const AI_TAUNTS = [
-  'Your walls crumble!',
-  'Bow before my armies!',
-  'The realm will be mine!',
-  'Resistance is futile!',
-  'Your kingdom falls!',
-  'None can stop my advance!',
+  'Your walls crumble!', 'Bow before my armies!', 'The realm will be mine!',
+  'Resistance is futile!', 'Your kingdom falls!', 'None can stop my advance!',
 ];
 
-function GameView({ onMenu, playerEmpire, aiEmpire }: GameViewProps) {
+function GameView({ onMenu, onChangeEmpire, onGameEnd, playerEmpire, aiEmpire }: GameViewProps) {
   const { state, sendFleet, sendFleetFromAll, useAbility, resetGame, setFleetPercent, setDimensions } = useGame();
   const { stats, recordWin, recordLoss } = useGameStorage();
+  const sound = useSoundEngine();
 
   const [selectedPlanetId, setSelectedPlanetId] = useState<number | null>(null);
   const [allSelected, setAllSelected] = useState(false);
   const [pointerPos, setPointerPos] = useState({ x: 0, y: 0 });
+  const lastPointerUpdateRef = useRef(0);
   const [playAreaSize, setPlayAreaSize] = useState({ width: 375, height: 500 });
   const [comboLabel, setComboLabel] = useState('');
   const [tauntText, setTauntText] = useState('');
 
   const resultRecordedRef = useRef(false);
   const prevBestRef = useRef<number | null>(null);
+  const abilityUsedRef = useRef(false);
   const warCryFlashAnim = useRef(new Animated.Value(0)).current;
 
-  const comboOpacity  = useRef(new Animated.Value(0)).current;
-  const comboTransY   = useRef(new Animated.Value(0)).current;
-  const comboScale    = useRef(new Animated.Value(1)).current;
-  const tauntOpacity  = useRef(new Animated.Value(0)).current;
-  const tauntTransY   = useRef(new Animated.Value(0)).current;
-  const atmTintAnim   = useRef(new Animated.Value(0)).current;
-
+  const comboOpacity = useRef(new Animated.Value(0)).current;
+  const comboTransY = useRef(new Animated.Value(0)).current;
+  const comboScale = useRef(new Animated.Value(1)).current;
+  const tauntOpacity = useRef(new Animated.Value(0)).current;
+  const tauntTransY = useRef(new Animated.Value(0)).current;
+  const atmTintAnim = useRef(new Animated.Value(0)).current;
   const comboDataRef = useRef({ count: 0, lastTime: 0 });
+
+  // Start ambient on mount
+  useEffect(() => { sound.startAmbient(); return () => sound.stopAmbient(); }, []);
 
   const handleAbility = useCallback(() => {
     useAbility();
+    abilityUsedRef.current = true;
+    sound.sfxAbility();
+    // Haptic
+    if (Platform.OS !== 'web' && typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50);
     warCryFlashAnim.setValue(1);
     Animated.timing(warCryFlashAnim, { toValue: 0, duration: 300, useNativeDriver: false }).start();
-  }, [useAbility]);
+  }, [useAbility, sound]);
 
+  const handleSendFleet = useCallback((fromId: number, toId: number) => {
+    sendFleet(fromId, toId);
+    sound.sfxDispatch();
+    if (Platform.OS !== 'web' && typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(10);
+  }, [sendFleet, sound]);
+
+  const handleSendFleetFromAll = useCallback((toId: number) => {
+    sendFleetFromAll(toId);
+    sound.sfxDispatch();
+  }, [sendFleetFromAll, sound]);
+
+  // Conquest combo
   useEffect(() => {
     const total = state.playerConquestTotal;
     if (total === 0) return;
+    sound.sfxCapture();
+    if (Platform.OS !== 'web' && typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(30);
     const now = Date.now();
     const combo = comboDataRef.current;
     if (now - combo.lastTime < 4200) {
       combo.count = Math.min(combo.count + 1, COMBO_LABELS.length - 1);
-    } else {
-      combo.count = 1;
-    }
+    } else { combo.count = 1; }
     combo.lastTime = now;
     const label = COMBO_LABELS[combo.count];
     if (label) {
       setComboLabel(label);
-      comboOpacity.setValue(0);
-      comboTransY.setValue(0);
-      comboScale.setValue(1.5);
+      comboOpacity.setValue(0); comboTransY.setValue(0); comboScale.setValue(1.5);
       Animated.parallel([
         Animated.sequence([
           Animated.timing(comboOpacity, { toValue: 1, duration: 90, useNativeDriver: false }),
@@ -91,16 +126,16 @@ function GameView({ onMenu, playerEmpire, aiEmpire }: GameViewProps) {
     }
   }, [state.playerConquestTotal]);
 
+  // Enemy conquest
   useEffect(() => {
     const total = state.enemyConquestTotal;
     if (total === 0) return;
-    const taunts = aiEmpire?.warCry
-      ? [...AI_TAUNTS, aiEmpire.warCry]
-      : AI_TAUNTS;
+    sound.sfxImpact();
+    if (Platform.OS !== 'web' && typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate([20, 10, 20]);
+    const taunts = aiEmpire?.warCry ? [...AI_TAUNTS, aiEmpire.warCry] : AI_TAUNTS;
     const picked = taunts[Math.floor(Math.random() * taunts.length)];
     setTauntText(picked);
-    tauntOpacity.setValue(0);
-    tauntTransY.setValue(0);
+    tauntOpacity.setValue(0); tauntTransY.setValue(0);
     Animated.parallel([
       Animated.sequence([
         Animated.timing(tauntOpacity, { toValue: 0.88, duration: 200, useNativeDriver: false }),
@@ -111,174 +146,156 @@ function GameView({ onMenu, playerEmpire, aiEmpire }: GameViewProps) {
     ]).start();
   }, [state.enemyConquestTotal]);
 
-  const playerPlanets = state.planets.filter(p => p.owner === 1).length;
-  const enemyPlanets  = state.planets.filter(p => p.owner === 2).length;
+  // Use for-loop counts instead of .filter().length to avoid allocation
+  let playerPlanets = 0, enemyPlanets = 0;
+  for (let i = 0; i < state.planets.length; i++) {
+    if (state.planets[i].owner === 1) playerPlanets++;
+    else if (state.planets[i].owner === 2) enemyPlanets++;
+  }
 
   useEffect(() => {
     const dominance = state.planets.length > 0
-      ? state.planets.filter(p => p.owner === 1).length / state.planets.length
-      : 0.5;
-    const target = dominance > 0.65 ? 0.05 : dominance < 0.35 ? 0 : 0;
+      ? state.planets.filter(p => p.owner === 1).length / state.planets.length : 0.5;
+    const target = dominance > 0.65 ? 0.05 : 0;
     Animated.timing(atmTintAnim, { toValue: target, duration: 1800, useNativeDriver: false }).start();
   }, [playerPlanets]);
 
+  // Game end handling
   useEffect(() => {
     if (state.phase === 'won' && !resultRecordedRef.current) {
       resultRecordedRef.current = true;
       prevBestRef.current = stats.bestTimeMs;
-      const elapsed = state.gameEndTime
-        ? state.gameEndTime - state.gameStartTime
-        : 0;
+      const elapsed = state.gameEndTime ? state.gameEndTime - state.gameStartTime : 0;
       recordWin(elapsed);
+      sound.sfxVictory();
+      if (Platform.OS !== 'web' && typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate([100, 50, 100]);
+      onGameEnd(true, elapsed, state.playerConquestTotal, abilityUsedRef.current);
     } else if (state.phase === 'lost' && !resultRecordedRef.current) {
       resultRecordedRef.current = true;
       recordLoss();
+      sound.sfxDefeat();
+      if (Platform.OS !== 'web' && typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(200);
+      const elapsed = state.gameEndTime ? state.gameEndTime - state.gameStartTime : 0;
+      onGameEnd(false, elapsed, state.playerConquestTotal, abilityUsedRef.current);
     }
   }, [state.phase]);
 
-  const handleLayout = useCallback(
-    (w: number, h: number) => {
-      if (w !== playAreaSize.width || h !== playAreaSize.height) {
-        setPlayAreaSize({ width: w, height: h });
-        setDimensions(w, h);
-      }
-    },
-    [playAreaSize.width, playAreaSize.height, setDimensions]
-  );
+  const handleLayout = useCallback((w: number, h: number) => {
+    if (w !== playAreaSize.width || h !== playAreaSize.height) {
+      setPlayAreaSize({ width: w, height: h });
+      setDimensions(w, h);
+    }
+  }, [playAreaSize.width, playAreaSize.height, setDimensions]);
 
   const handleReset = useCallback(() => {
     resultRecordedRef.current = false;
+    abilityUsedRef.current = false;
     comboDataRef.current = { count: 0, lastTime: 0 };
-    setComboLabel('');
-    setTauntText('');
-    setSelectedPlanetId(null);
-    setAllSelected(false);
+    setComboLabel(''); setTauntText('');
+    setSelectedPlanetId(null); setAllSelected(false);
     resetGame(state.difficulty, playAreaSize.width, playAreaSize.height);
   }, [resetGame, state.difficulty, playAreaSize]);
 
-  const handleMenu = useCallback(() => {
-    resultRecordedRef.current = false;
-    onMenu();
-  }, [onMenu]);
+  const handleMenu = useCallback(() => { resultRecordedRef.current = false; onMenu(); }, [onMenu]);
+  const handleChangeEmpire = useCallback(() => { resultRecordedRef.current = false; onChangeEmpire(); }, [onChangeEmpire]);
 
-  const elapsedMs =
-    state.gameEndTime !== null
-      ? state.gameEndTime - state.gameStartTime
-      : Date.now() - state.gameStartTime;
+  const elapsedMs = state.gameEndTime !== null
+    ? state.gameEndTime - state.gameStartTime
+    : Date.now() - state.gameStartTime;
+
+  const abilityMaxCooldown = playerEmpire?.ability?.cooldown ?? 22;
 
   return (
     <View style={styles.root}>
       <StarField />
+      <TopHUD playerPlanets={playerPlanets} enemyPlanets={enemyPlanets}
+        totalPlanets={state.planets.length} difficulty={state.difficulty}
+        elapsedMs={elapsedMs} onReset={handleReset}
+        abilityActive={state.abilityActive} playerEmpire={playerEmpire} aiEmpire={aiEmpire} />
 
-      <TopHUD
-        playerPlanets={playerPlanets}
-        enemyPlanets={enemyPlanets}
-        totalPlanets={state.planets.length}
-        difficulty={state.difficulty}
-        elapsedMs={elapsedMs}
-        onReset={handleReset}
-      />
-
-      <View
-        style={styles.playArea}
-        onLayout={e => {
-          const { width, height } = e.nativeEvent.layout;
-          handleLayout(width, height);
-        }}
-      >
-        <GameCanvas
-          width={playAreaSize.width}
-          height={playAreaSize.height}
+      <View style={styles.playArea} onLayout={e => {
+        const { width, height } = e.nativeEvent.layout;
+        handleLayout(width, height);
+      }}>
+        <GameCanvas width={playAreaSize.width} height={playAreaSize.height}
           onSelectPlanet={id => { setSelectedPlanetId(id); if (id !== null) setAllSelected(false); }}
-          onSendFleet={sendFleet}
-          onSendFleetFromAll={sendFleetFromAll}
+          onSendFleet={handleSendFleet} onSendFleetFromAll={handleSendFleetFromAll}
           onClearAll={() => setAllSelected(false)}
-          selectedPlanetId={selectedPlanetId}
-          allSelected={allSelected}
-          pointerPos={pointerPos}
-          onPointerMove={(x, y) => setPointerPos({ x, y })}
-          playerEmpire={playerEmpire}
-          aiEmpire={aiEmpire}
-        />
+          selectedPlanetId={selectedPlanetId} allSelected={allSelected}
+          pointerPos={pointerPos} onPointerMove={(x, y) => {
+            const now = Date.now();
+            if (now - lastPointerUpdateRef.current < 33) return; // throttle to ~30/s
+            lastPointerUpdateRef.current = now;
+            setPointerPos({ x, y });
+          }}
+          playerEmpire={playerEmpire} aiEmpire={aiEmpire} />
 
-        {/* Battlefield atmosphere tint — glows empire color when dominating */}
-        <Animated.View
-          pointerEvents="none"
-          style={[StyleSheet.absoluteFill, {
-            backgroundColor: playerEmpire?.nodeColor ?? '#44EE66',
-            opacity: atmTintAnim,
-          }]}
-        />
+        <Animated.View pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { backgroundColor: playerEmpire?.nodeColor ?? '#44EE66', opacity: atmTintAnim }]} />
 
-        {/* Combo text burst */}
         {comboLabel !== '' && (
-          <Animated.Text
-            pointerEvents="none"
+          <Animated.Text pointerEvents="none"
             style={[styles.comboText, {
               color: playerEmpire?.nodeColor ?? '#44EE66',
-              opacity: comboOpacity,
-              transform: [{ translateY: comboTransY }, { scale: comboScale }],
+              opacity: comboOpacity, transform: [{ translateY: comboTransY }, { scale: comboScale }],
               top: playAreaSize.height * 0.30,
-            }]}>
-            {comboLabel}
-          </Animated.Text>
+            }]}>{comboLabel}</Animated.Text>
         )}
-
-        {/* AI enemy taunt */}
         {tauntText !== '' && (
-          <Animated.Text
-            pointerEvents="none"
+          <Animated.Text pointerEvents="none"
             style={[styles.tauntText, {
               color: aiEmpire?.nodeColor ?? '#EE3344',
-              opacity: tauntOpacity,
-              transform: [{ translateY: tauntTransY }],
-            }]}>
-            ⚔ {tauntText}
-          </Animated.Text>
+              opacity: tauntOpacity, transform: [{ translateY: tauntTransY }],
+            }]}>{tauntText}</Animated.Text>
         )}
       </View>
 
-      {/* War Cry full-screen empire color flash */}
-      <Animated.View
-        pointerEvents="none"
+      <Animated.View pointerEvents="none"
         style={[StyleSheet.absoluteFill, {
           backgroundColor: playerEmpire?.nodeColor ?? '#FFAA22',
           opacity: warCryFlashAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.08] }),
-        }]}
-      />
+        }]} />
 
-      <BottomHUD
-        abilityCooldown={state.abilityCooldown}
-        fleetPercent={state.fleetPercent}
-        onAbility={handleAbility}
+      <BottomHUD abilityCooldown={state.abilityCooldown} abilityMaxCooldown={abilityMaxCooldown}
+        fleetPercent={state.fleetPercent} onAbility={handleAbility}
         onSetFleetPercent={(pct: FleetPercent) => setFleetPercent(pct)}
-        selectedPlanetId={selectedPlanetId}
-        allSelected={allSelected}
+        selectedPlanetId={selectedPlanetId} allSelected={allSelected}
         onToggleAll={() => { setAllSelected(a => !a); setSelectedPlanetId(null); }}
-        playerEmpire={playerEmpire}
-      />
+        playerEmpire={playerEmpire} abilityActive={state.abilityActive} />
 
-      <GameOverlay
-        phase={state.phase}
-        onReset={handleReset}
-        onMenu={handleMenu}
-        elapsedMs={elapsedMs}
-        stats={stats}
-        prevBestTimeMs={prevBestRef.current}
-      />
+      <GameOverlay phase={state.phase} onReset={handleReset} onMenu={handleMenu}
+        onChangeEmpire={handleChangeEmpire} elapsedMs={elapsedMs}
+        stats={stats} prevBestTimeMs={prevBestRef.current}
+        playerEmpire={playerEmpire} nodesCaptures={state.playerConquestTotal} />
     </View>
   );
 }
 
 // ─── Root app shell ────────────────────────────────────────────────────────
+type GameMode = 'quickplay' | 'campaign' | 'tournament' | 'localmulti';
+
 export default function GameApp() {
   const [screen, setScreen] = useState<AppScreen>('start');
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
+  const [mapSize, setMapSize] = useState<MapSize>('medium');
   const [playerEmpire, setPlayerEmpire] = useState<EmpireConfig | null>(null);
   const [aiEmpire, setAiEmpire] = useState<EmpireConfig | null>(null);
-  const { stats, tutorialSeen, loaded, markTutorialSeen } = useGameStorage();
+  const [gameKey, setGameKey] = useState(0);
+  const [gameMode, setGameMode] = useState<GameMode>('quickplay');
+  const [campaignMapIdx, setCampaignMapIdx] = useState<number>(0);
+  const [campaignEmpireId, setCampaignEmpireId] = useState<EmpireId>('egypt');
 
-  const goToGame = () => setScreen('game');
+  const { stats, tutorialSeen, loaded: statsLoaded, markTutorialSeen } = useGameStorage();
+  const ranked = useRankedSeason();
+  const dailies = useDailyChallenges();
+  const sound = useSoundEngine();
+  const replays = useReplaySystem();
+  const worldMap = useWorldMap();
+  const campaign = useCampaign();
+  const tournament = useTournament();
+  const clanSystem = useClanSystem();
+
+  const goToGame = (mode: GameMode = 'quickplay') => { setGameMode(mode); setGameKey(k => k + 1); setScreen('game'); };
   const goToMenu = () => setScreen('start');
 
   const handleStart = (d: Difficulty) => {
@@ -292,22 +309,117 @@ export default function GameApp() {
     const aEmpire = EMPIRE_CONFIG[aiId];
     setPlayerEmpire(pEmpire);
     setAiEmpire(aEmpire);
-    if (!tutorialSeen) {
-      setScreen('tutorial');
-    } else {
-      goToGame();
-    }
+    sound.playEmpireMotif(empireId);
+    setScreen('mapsize');
+  };
+
+  const handleSelectMapSize = (size: MapSize) => {
+    setMapSize(size);
+    if (!tutorialSeen) { setScreen('tutorial'); }
+    else { goToGame('quickplay'); replays.startRecording(); }
   };
 
   const handleTutorialDone = () => {
     markTutorialSeen();
-    goToGame();
+    goToGame('quickplay');
+    replays.startRecording();
   };
 
-  if (!loaded) {
+  const handleGameEnd = useCallback(async (
+    won: boolean, elapsedMs: number, nodesCaptures: number, abilityUsed: boolean
+  ) => {
+    if (!playerEmpire || !aiEmpire) return;
+
+    // Ranked XP (all modes)
+    await ranked.recordGameResult(won, playerEmpire.id, mapSize, elapsedMs, abilityUsed);
+
+    // Daily challenges (all modes)
+    const challengeResult = dailies.checkGameResult(
+      won, playerEmpire.id, mapSize, elapsedMs, abilityUsed,
+      nodesCaptures,
+      won, // capital captured if won
+      false, // usedOnly75 - simplified
+    );
+    if (challengeResult.xpEarned > 0) {
+      await ranked.addXP(challengeResult.xpEarned);
+      sound.sfxChallengeComplete();
+    }
+    if (challengeResult.masteryEarned > 0) {
+      await ranked.addEmpireMasteryXP(playerEmpire.id, challengeResult.masteryEarned);
+    }
+
+    // World map territories (all modes)
+    if (won) {
+      const claim = mapSize === 'large' ? 3 : mapSize === 'medium' ? 2 : 1;
+      await worldMap.claimTerritories(playerEmpire.id, claim);
+    }
+
+    // Clan XP (all modes)
+    if (clanSystem.clan) {
+      const clanXP = won ? 100 : 30;
+      await clanSystem.addClanXP(clanXP);
+    }
+
+    // Replay (all modes)
+    await replays.finishRecording(
+      playerEmpire.id, aiEmpire.id, mapSize, won, elapsedMs, nodesCaptures
+    );
+
+    // ── MODE-SPECIFIC RESULTS ──
+
+    // Campaign: record map completion
+    if (gameMode === 'campaign') {
+      await campaign.completeMap(campaignEmpireId, campaignMapIdx, won, elapsedMs, abilityUsed);
+    }
+
+    // Tournament: resolve match
+    if (gameMode === 'tournament') {
+      await tournament.resolveMatch(won, nodesCaptures);
+    }
+  }, [playerEmpire, aiEmpire, mapSize, gameMode, campaignEmpireId, campaignMapIdx,
+      ranked, dailies, worldMap, clanSystem, replays, sound, campaign, tournament]);
+
+  const handleShareReplay = useCallback((replay: any) => {
+    const text = replays.getShareText(replay);
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && (navigator as any).share) {
+      (navigator as any).share({ text }).catch(() => {});
+    } else if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
+  }, [replays]);
+
+  // Tournament handlers
+  const handleStartTournament = useCallback(async () => {
+    await tournament.startTournament();
+  }, [tournament]);
+
+  const handleTournamentPlay = useCallback(() => {
+    const match = tournament.getPlayerMatch();
+    if (!match) return;
+    const pEmp = match.competitor1?.isPlayer ? match.competitor1 : match.competitor2;
+    const aiComp = match.competitor1?.isPlayer ? match.competitor2 : match.competitor1;
+    if (!pEmp || !aiComp) return;
+    setPlayerEmpire(EMPIRE_CONFIG[pEmp.empire]);
+    setAiEmpire(EMPIRE_CONFIG[aiComp.empire]);
+    setDifficulty('medium');
+    setMapSize('medium');
+    goToGame('tournament');
+  }, [tournament]);
+
+  const handleTournamentReward = useCallback(async () => {
+    const reward = tournament.getReward();
+    if (reward > 0) {
+      await ranked.addXP(reward);
+      await tournament.markRewarded();
+      sound.sfxRankUp();
+    }
+  }, [tournament, ranked, sound]);
+
+  if (!statsLoaded || !ranked.loaded) {
     return <View style={styles.root} />;
   }
 
+  // ── Screen routing ──────────────────────────────────────────────────────
   if (screen === 'start') {
     return (
       <View style={styles.root}>
@@ -315,7 +427,21 @@ export default function GameApp() {
         <StartScreen
           onStart={handleStart}
           onShowTutorial={() => setScreen('tutorial')}
+          onCampaign={() => setScreen('campaign')}
+          onTournament={() => setScreen('tournament')}
+          onWorldMap={() => setScreen('worldmap')}
+          onClan={() => setScreen('clan')}
+          onReplays={() => setScreen('replays')}
+          onLocalMultiplayer={() => setScreen('localmulti')}
           stats={stats}
+          rank={ranked.data.rank}
+          xp={ranked.data.currentXP}
+          seasonDaysLeft={ranked.seasonDaysLeft}
+          challenges={dailies.challenges}
+          msUntilChallengeReset={dailies.msUntilMidnight}
+          clan={clanSystem.clan}
+          soundEnabled={sound.settings.enabled}
+          onToggleSound={sound.toggleSound}
         />
       </View>
     );
@@ -325,7 +451,20 @@ export default function GameApp() {
     return (
       <View style={styles.root}>
         <StarField />
-        <LeaderSelect onSelect={handleSelectEmpire} />
+        <LeaderSelect
+          onSelect={handleSelectEmpire}
+          empireMastery={ranked.data.empireMastery}
+          empireXP={ranked.data.empireXP}
+        />
+      </View>
+    );
+  }
+
+  if (screen === 'mapsize') {
+    return (
+      <View style={styles.root}>
+        <StarField />
+        <MapSizeSelect onSelect={handleSelectMapSize} />
       </View>
     );
   }
@@ -339,38 +478,131 @@ export default function GameApp() {
     );
   }
 
+  if (screen === 'tournament') {
+    return (
+      <View style={styles.root}>
+        <StarField />
+        <TournamentScreen
+          data={tournament.data}
+          isTournamentTime={tournament.isTournamentTime}
+          msUntilNext={tournament.msUntilNextTournament}
+          onStart={handleStartTournament}
+          onPlayMatch={handleTournamentPlay}
+          onCollectReward={handleTournamentReward}
+          onBack={goToMenu}
+        />
+      </View>
+    );
+  }
+
+  if (screen === 'campaign') {
+    return (
+      <View style={styles.root}>
+        <StarField />
+        <CampaignScreen
+          progress={campaign.progress}
+          onSelectMap={(empireId, mapIdx) => {
+            const map = CAMPAIGNS[empireId].maps[mapIdx];
+            setCampaignEmpireId(empireId);
+            setCampaignMapIdx(mapIdx);
+            setPlayerEmpire(EMPIRE_CONFIG[empireId]);
+            setAiEmpire(EMPIRE_CONFIG[randomEmpireExcluding(empireId)]);
+            setDifficulty(map.difficulty < 0.4 ? 'easy' : map.difficulty < 0.7 ? 'medium' : 'hard');
+            setMapSize(map.nodeCount <= 10 ? 'small' : map.nodeCount <= 16 ? 'medium' : 'large');
+            goToGame('campaign');
+          }}
+          onBack={goToMenu}
+        />
+      </View>
+    );
+  }
+
+  if (screen === 'worldmap') {
+    return (
+      <View style={styles.root}>
+        <StarField />
+        <WorldMapScreen data={worldMap.data} onBack={goToMenu} />
+      </View>
+    );
+  }
+
+  if (screen === 'clan') {
+    return (
+      <View style={styles.root}>
+        <StarField />
+        <ClanScreen
+          clan={clanSystem.clan}
+          onCreateClan={(name, color) => clanSystem.createClan(name, color)}
+          onJoinClan={(code) => clanSystem.joinClan(code)}
+          onLeaveClan={() => clanSystem.leaveClan()}
+          onGetShareCode={() => clanSystem.getShareCode()}
+          onBack={goToMenu}
+        />
+      </View>
+    );
+  }
+
+  if (screen === 'replays') {
+    return (
+      <View style={styles.root}>
+        <StarField />
+        <ReplayScreen
+          replays={replays.replays}
+          onShare={handleShareReplay}
+          onBack={goToMenu}
+        />
+      </View>
+    );
+  }
+
+  if (screen === 'localmulti') {
+    return (
+      <View style={styles.root}>
+        <StarField />
+        <LocalMultiplayerSetup
+          onStart={(p1Emp, p2Emp, ms) => {
+            setPlayerEmpire(EMPIRE_CONFIG[p1Emp]);
+            setAiEmpire(EMPIRE_CONFIG[p2Emp]);
+            setMapSize(ms);
+            setDifficulty('medium');
+            goToGame('localmulti');
+          }}
+          onBack={goToMenu}
+        />
+      </View>
+    );
+  }
+
   // Game screen
   return (
-    <GameProvider key={difficulty} initialDifficulty={difficulty}>
-      <GameView onMenu={goToMenu} playerEmpire={playerEmpire} aiEmpire={aiEmpire} />
+    <GameProvider
+      key={`${difficulty}-${mapSize}-${gameKey}`}
+      initialDifficulty={difficulty}
+      mapSize={mapSize}
+      playerEmpireId={playerEmpire?.id ?? null}
+      aiEmpireId={aiEmpire?.id ?? null}
+      playerStreak={stats.streak}
+    >
+      <GameView
+        onMenu={goToMenu}
+        onChangeEmpire={() => setScreen('leader')}
+        onGameEnd={handleGameEnd}
+        playerEmpire={playerEmpire}
+        aiEmpire={aiEmpire}
+      />
     </GameProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  playArea: {
-    flex: 1,
-    overflow: 'hidden',
-  },
+  root: { flex: 1, backgroundColor: Colors.background },
+  playArea: { flex: 1, overflow: 'hidden' },
   comboText: {
-    position: 'absolute',
-    left: 0, right: 0,
-    textAlign: 'center',
-    fontSize: 28,
-    fontFamily: 'Inter_700Bold',
-    letterSpacing: 4,
+    position: 'absolute', left: 0, right: 0, textAlign: 'center',
+    fontSize: 28, fontFamily: 'Inter_700Bold', letterSpacing: 4,
   } as any,
   tauntText: {
-    position: 'absolute',
-    top: 14,
-    left: 16, right: 16,
-    textAlign: 'center',
-    fontSize: 13,
-    fontFamily: 'Inter_600SemiBold',
-    letterSpacing: 1.5,
+    position: 'absolute', top: 14, left: 16, right: 16, textAlign: 'center',
+    fontSize: 13, fontFamily: 'Inter_600SemiBold', letterSpacing: 1.5,
   } as any,
 });

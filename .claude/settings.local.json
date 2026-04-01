@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(pnpm exec:*)",
+      "Bash(pnpm run:*)",
+      "Bash(pnpm install:*)",
+      "Bash(cat:*)",
+      "Bash(wc -c /c/Users/Jems4/AppData/Local/Temp/claude/C--Users-Jems4-CascadeProjects-GALACTICOS/*/tasks/b7k7zbfm2.output)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8082)"
+    ]
+  }
+}
