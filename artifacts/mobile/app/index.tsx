@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Platform, StyleSheet, View } from 'react-native';
+import { Animated, Platform, StyleSheet, Text, View } from 'react-native';
 
 import GameCanvas from '@/components/GameCanvas';
 import GameOverlay from '@/components/GameOverlay';
@@ -335,12 +335,48 @@ export default function GameApp() {
   const tournament = useTournament();
   const clanSystem = useClanSystem();
 
-  const goToGame = (mode: AppGameMode = 'quickplay') => { setAppGameMode(mode); setGameKey(k => k + 1); setScreen('game'); };
-  const goToMenu = () => setScreen('start');
+  // ── Screen transition system ──
+  const transitionOpacity = useRef(new Animated.Value(1)).current;
+  const transitionTo = useCallback((nextScreen: AppScreen, duration = 250) => {
+    Animated.timing(transitionOpacity, { toValue: 0, duration, useNativeDriver: true }).start(() => {
+      setScreen(nextScreen);
+      Animated.timing(transitionOpacity, { toValue: 1, duration, useNativeDriver: true }).start();
+    });
+  }, []);
+
+  // ── Game intro state ──
+  const [showGameIntro, setShowGameIntro] = useState(false);
+  const introOpacity = useRef(new Animated.Value(1)).current;
+  const introIconScale = useRef(new Animated.Value(0.5)).current;
+  const introTextOpacity = useRef(new Animated.Value(0)).current;
+
+  const playGameIntro = useCallback(() => {
+    setShowGameIntro(true);
+    introOpacity.setValue(1);
+    introIconScale.setValue(0.5);
+    introTextOpacity.setValue(0);
+    // Icon entrance
+    Animated.spring(introIconScale, { toValue: 1.2, tension: 80, friction: 8, useNativeDriver: true }).start();
+    // "BATTLE BEGINS" text
+    Animated.sequence([
+      Animated.delay(1200),
+      Animated.timing(introTextOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.delay(600),
+      Animated.timing(introOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
+    ]).start(() => setShowGameIntro(false));
+  }, []);
+
+  const goToGame = (mode: AppGameMode = 'quickplay') => {
+    setAppGameMode(mode);
+    setGameKey(k => k + 1);
+    setScreen('game');
+    playGameIntro();
+  };
+  const goToMenu = () => transitionTo('start');
 
   const handleStart = (d: Difficulty) => {
     setDifficulty(d);
-    setScreen('leader');
+    transitionTo('leader');
   };
 
   const handleSelectEmpire = (empireId: EmpireId) => {
@@ -350,7 +386,7 @@ export default function GameApp() {
     setPlayerEmpire(pEmpire);
     setAiEmpire(aEmpire);
     sound.playEmpireMotif(empireId);
-    setScreen('mapsize');
+    transitionTo('mapsize');
   };
 
   const handleSelectMapSize = (size: MapSize, gm: GameMode = 'conquest') => {
@@ -469,13 +505,13 @@ export default function GameApp() {
         <StarField />
         <StartScreen
           onStart={handleStart}
-          onShowTutorial={() => setScreen('tutorial')}
-          onCampaign={() => setScreen('campaign')}
-          onTournament={() => setScreen('tournament')}
-          onWorldMap={() => setScreen('worldmap')}
-          onClan={() => setScreen('clan')}
-          onReplays={() => setScreen('replays')}
-          onLocalMultiplayer={() => setScreen('localmulti')}
+          onShowTutorial={() => transitionTo('tutorial')}
+          onCampaign={() => transitionTo('campaign')}
+          onTournament={() => transitionTo('tournament')}
+          onWorldMap={() => transitionTo('worldmap')}
+          onClan={() => transitionTo('clan')}
+          onReplays={() => transitionTo('replays')}
+          onLocalMultiplayer={() => transitionTo('localmulti')}
           stats={stats}
           rank={ranked.data.rank}
           xp={ranked.data.currentXP}
@@ -620,24 +656,44 @@ export default function GameApp() {
 
   // Game screen
   return (
-    <GameProvider
-      key={`${difficulty}-${mapSize}-${gameKey}-${regicideMode}`}
-      initialDifficulty={difficulty}
-      mapSize={mapSize}
-      playerEmpireId={playerEmpire?.id ?? null}
-      aiEmpireId={aiEmpire?.id ?? null}
-      playerStreak={stats.streak}
-      gameMode={regicideMode}
-    >
-      <GameView
-        onMenu={goToMenu}
-        onChangeEmpire={() => setScreen('leader')}
-        onGameEnd={handleGameEnd}
-        playerEmpire={playerEmpire}
-        aiEmpire={aiEmpire}
+    <View style={styles.root}>
+      <GameProvider
+        key={`${difficulty}-${mapSize}-${gameKey}-${regicideMode}`}
+        initialDifficulty={difficulty}
+        mapSize={mapSize}
+        playerEmpireId={playerEmpire?.id ?? null}
+        aiEmpireId={aiEmpire?.id ?? null}
+        playerStreak={stats.streak}
         gameMode={regicideMode}
-      />
-    </GameProvider>
+      >
+        <GameView
+          onMenu={goToMenu}
+          onChangeEmpire={() => transitionTo('leader')}
+          onGameEnd={handleGameEnd}
+          playerEmpire={playerEmpire}
+          aiEmpire={aiEmpire}
+          gameMode={regicideMode}
+        />
+      </GameProvider>
+
+      {/* Game intro overlay */}
+      {showGameIntro && (
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.introOverlay, { opacity: introOpacity }]}>
+          <Animated.Text style={[styles.introIcon, {
+            transform: [{ scale: introIconScale }],
+            color: playerEmpire?.nodeColor ?? '#FFD700',
+          }]}>
+            {regicideMode === 'regicide' ? '👑' : '⚔️'}
+          </Animated.Text>
+          <Animated.Text style={[styles.introText, { opacity: introTextOpacity }]}>
+            {regicideMode === 'regicide' ? 'THE KING MUST FALL' : 'BATTLE BEGINS'}
+          </Animated.Text>
+          <Animated.Text style={[styles.introMode, { opacity: introTextOpacity, color: playerEmpire?.nodeColor ?? '#FFD700' }]}>
+            {playerEmpire?.empire?.toUpperCase() ?? 'THRAXON'}
+          </Animated.Text>
+        </Animated.View>
+      )}
+    </View>
   );
 }
 
@@ -652,4 +708,29 @@ const styles = StyleSheet.create({
     position: 'absolute', top: 14, left: 16, right: 16, textAlign: 'center',
     fontSize: 13, fontFamily: 'Inter_600SemiBold', letterSpacing: 1.5,
   } as any,
+  introOverlay: {
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 200,
+    gap: 16,
+  },
+  introIcon: {
+    fontSize: 64,
+  },
+  introText: {
+    fontSize: 28,
+    fontFamily: 'Inter_700Bold',
+    color: '#FFD700',
+    letterSpacing: 6,
+    textShadowColor: 'rgba(255,215,0,0.5)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 20,
+  } as any,
+  introMode: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+    letterSpacing: 4,
+    opacity: 0.7,
+  },
 });

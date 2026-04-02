@@ -47,7 +47,7 @@ const CONFETTI_COLORS = [
   '#FFB347', '#FFFFFF', '#CC7700', '#22CCDD',
   '#FF88CC', '#AAFFAA', '#FFCC44', '#FF4488',
 ];
-const CONFETTI_COUNT = 36;
+const CONFETTI_COUNT = 60;
 
 const confettiMeta = Array.from({ length: CONFETTI_COUNT }, (_, i) => ({
   xFrac: Math.random(),
@@ -533,9 +533,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   result: {
-    fontSize: 42,
+    fontSize: 38,
     fontFamily: 'Inter_700Bold',
-    letterSpacing: 4,
+    letterSpacing: 6,
   },
   resultSub: {
     fontSize: 13,

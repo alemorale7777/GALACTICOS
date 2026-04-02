@@ -244,11 +244,11 @@ const titleStyles = StyleSheet.create({
     }),
     fontWeight: '900',
     color: '#FFD700',
-    letterSpacing: 4,
+    letterSpacing: 8,
     textShadowColor: 'rgba(255,215,0,0.9)',
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 20,
-    marginHorizontal: 2,
+    marginHorizontal: 1,
   } as any,
   shimmer: {
     position: 'absolute',
@@ -416,6 +416,7 @@ export default function StartScreen({
   const bottomInset = Platform.OS === 'web' ? 34 : insets.bottom;
 
   const [showStats, setShowStats] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Entrance animations
   const rankBarAnim = useRef(new Animated.Value(0)).current;
@@ -579,7 +580,11 @@ export default function StartScreen({
         <TouchableOpacity style={styles.bottomIconBtn} onPress={() => setShowStats(true)} activeOpacity={0.7}>
           <Feather name="bar-chart-2" size={20} color="rgba(255,215,0,0.35)" />
         </TouchableOpacity>
+        <TouchableOpacity style={styles.bottomIconBtn} onPress={() => setShowSettings(true)} activeOpacity={0.7}>
+          <Feather name="settings" size={20} color="rgba(255,215,0,0.35)" />
+        </TouchableOpacity>
       </View>
+      <Text style={styles.versionText}>v1.0.0 — © 2026 THRAXON</Text>
 
       {/* ── Stats Modal ── */}
       <Modal visible={showStats} transparent animationType="fade">
@@ -618,6 +623,54 @@ export default function StartScreen({
               )}
             </View>
             <TouchableOpacity style={styles.modalClose} onPress={() => setShowStats(false)} activeOpacity={0.8}>
+              <Text style={styles.modalCloseText}>CLOSE</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Settings Modal ── */}
+      <Modal visible={showSettings} transparent animationType="slide">
+        <View style={styles.modalBg}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>SETTINGS</Text>
+            <View style={styles.modalAccent} />
+            <View style={styles.modalStats}>
+              <View style={styles.settingsRow}>
+                <Text style={styles.settingsLabel}>Sound</Text>
+                <TouchableOpacity
+                  style={[styles.settingsToggle, soundEnabled && styles.settingsToggleOn]}
+                  onPress={onToggleSound}>
+                  <Text style={styles.settingsToggleText}>{soundEnabled ? 'ON' : 'OFF'}</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.settingsRow}>
+                <Text style={styles.settingsLabel}>Music</Text>
+                <View style={[styles.settingsToggle, styles.settingsToggleDisabled]}>
+                  <Text style={styles.settingsToggleTextDisabled}>SOON</Text>
+                </View>
+              </View>
+              <View style={styles.settingsRow}>
+                <Text style={styles.settingsLabel}>Haptics</Text>
+                <View style={[styles.settingsToggle, styles.settingsToggleOn]}>
+                  <Text style={styles.settingsToggleText}>ON</Text>
+                </View>
+              </View>
+              <View style={styles.settingsRow}>
+                <Text style={styles.settingsLabel}>Quality</Text>
+                <View style={[styles.settingsToggle, styles.settingsToggleOn]}>
+                  <Text style={styles.settingsToggleText}>AUTO</Text>
+                </View>
+              </View>
+            </View>
+            <View style={styles.aboutSection}>
+              <Text style={styles.aboutTitle}>ABOUT</Text>
+              <Text style={styles.aboutText}>THRAXON v1.0.0</Text>
+              <Text style={styles.aboutText}>Empire Conquest — Forged in Battle</Text>
+              <Text style={styles.aboutTextMuted}>Developed independently</Text>
+              <Text style={styles.aboutTextMuted}>© 2026 THRAXON. All rights reserved.</Text>
+            </View>
+            <TouchableOpacity style={styles.modalClose} onPress={() => setShowSettings(false)} activeOpacity={0.8}>
               <Text style={styles.modalCloseText}>CLOSE</Text>
             </TouchableOpacity>
           </View>
@@ -728,4 +781,30 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(255,200,60,0.2)',
   },
   modalCloseText: { fontSize: 14, fontFamily: 'Inter_700Bold', color: 'rgba(255,210,100,0.6)', letterSpacing: 1.5 },
+
+  /* ── Version Text ── */
+  versionText: {
+    fontSize: 8, color: 'rgba(255,215,0,0.15)',
+    fontFamily: 'Inter_400Regular', letterSpacing: 1.5,
+    textAlign: 'center', marginTop: 2,
+  },
+
+  /* ── Settings Modal ── */
+  settingsRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 8, paddingVertical: 4,
+  },
+  settingsLabel: { fontSize: 14, color: 'rgba(255,220,140,0.5)', fontFamily: 'Inter_400Regular' },
+  settingsToggle: {
+    paddingHorizontal: 14, paddingVertical: 5, borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+  },
+  settingsToggleOn: { backgroundColor: 'rgba(255,215,0,0.12)', borderColor: 'rgba(255,215,0,0.3)' },
+  settingsToggleDisabled: { opacity: 0.3 },
+  settingsToggleText: { fontSize: 12, fontFamily: 'Inter_700Bold', color: '#FFD700', letterSpacing: 1 },
+  settingsToggleTextDisabled: { fontSize: 11, fontFamily: 'Inter_600SemiBold', color: 'rgba(255,255,255,0.3)', letterSpacing: 1 },
+  aboutSection: { alignItems: 'center', gap: 4, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,215,0,0.08)', width: '100%' },
+  aboutTitle: { fontSize: 9, fontFamily: 'Inter_700Bold', color: 'rgba(255,215,0,0.3)', letterSpacing: 3, marginBottom: 4 },
+  aboutText: { fontSize: 12, fontFamily: 'Inter_500Medium', color: 'rgba(255,220,140,0.45)', textAlign: 'center' },
+  aboutTextMuted: { fontSize: 10, fontFamily: 'Inter_400Regular', color: 'rgba(255,220,140,0.2)', textAlign: 'center' },
 });

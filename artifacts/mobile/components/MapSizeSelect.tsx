@@ -16,10 +16,10 @@ interface Props {
   onSelect: (size: MapSize, gameMode: GameMode) => void;
 }
 
-const MAP_SIZES: { key: MapSize; icon: any; color: string }[] = [
-  { key: 'small',  icon: 'minimize-2', color: '#44BB66' },
-  { key: 'medium', icon: 'square',     color: '#EEAA22' },
-  { key: 'large',  icon: 'maximize-2', color: '#EE5544' },
+const MAP_SIZES: { key: MapSize; icon: any; color: string; tag: string; time: string }[] = [
+  { key: 'small',  icon: 'zap',        color: '#44BB66', tag: 'QUICK BATTLE', time: '~3 min' },
+  { key: 'medium', icon: 'crosshair',  color: '#EEAA22', tag: 'STANDARD', time: '~6 min' },
+  { key: 'large',  icon: 'shield',     color: '#EE5544', tag: 'EPIC BATTLE', time: '~12 min' },
 ];
 
 export default function MapSizeSelect({ onSelect }: Props) {
@@ -106,12 +106,12 @@ export default function MapSizeSelect({ onSelect }: Props) {
                     </Text>
                     {isDefault && (
                       <View style={[styles.defaultBadge, { borderColor: ms.color + '66' }]}>
-                        <Text style={[styles.defaultText, { color: ms.color }]}>DEFAULT</Text>
+                        <Text style={[styles.defaultText, { color: ms.color }]}>RECOMMENDED</Text>
                       </View>
                     )}
                   </View>
-                  <Text style={styles.cardDesc}>{config.desc}</Text>
-                  <Text style={styles.nodeCount}>{config.nodeCount} nodes</Text>
+                  <Text style={styles.cardDesc}>{ms.tag} — {ms.time}</Text>
+                  <Text style={styles.nodeCount}>{config.nodeCount} nodes • {config.desc}</Text>
                 </View>
                 <Feather name="chevron-right" size={18} color={ms.color + '99'} />
               </TouchableOpacity>

@@ -362,6 +362,16 @@ const EMBLEM_RENDERERS: Record<EmpireId, (s: number, c: string) => React.ReactEl
   han: (s, c) => <HanEmblem size={s} color={c} />,
 };
 
+const EMPIRE_DIFFICULTY: Record<EmpireId, number> = {
+  egypt: 3, rome: 2, mongols: 3, ptolemaic: 4, japan: 3,
+  vikings: 4, aztec: 5, persian: 4, ottoman: 5, han: 3,
+};
+
+const EMPIRE_PLAYSTYLE: Record<EmpireId, string> = {
+  egypt: 'GROWTH', rome: 'DEFENSE', mongols: 'SPEED', ptolemaic: 'DECEPTION', japan: 'OFFENSE',
+  vikings: 'BERSERKER', aztec: 'SACRIFICE', persian: 'ENDURANCE', ottoman: 'CONTROL', han: 'FORTIFY',
+};
+
 // ── Leader card ───────────────────────────────────────────────────────────────
 function LeaderCard({
   empire,
@@ -418,6 +428,18 @@ function LeaderCard({
           {masteryLevel >= 50 && <Text style={[styles.masteryStar, { color: '#FF2D55' }]}>{'\u2605'}</Text>}
         </View>
       )}
+
+      {/* Difficulty & Playstyle */}
+      <View style={styles.metaRow}>
+        <Text style={styles.diffStars}>
+          {'\u2605'.repeat(EMPIRE_DIFFICULTY[empire.id])}{'\u2606'.repeat(5 - EMPIRE_DIFFICULTY[empire.id])}
+        </Text>
+        <View style={[styles.playstyleBadge, { borderColor: empire.cardAccent + '55' }]}>
+          <Text style={[styles.playstyleText, { color: empire.cardAccent }]}>
+            {EMPIRE_PLAYSTYLE[empire.id]}
+          </Text>
+        </View>
+      </View>
 
       {/* Select button */}
       <TouchableOpacity
@@ -556,5 +578,19 @@ const styles = StyleSheet.create({
   },
   masteryStar: {
     fontSize: 10, color: '#FFD700',
+  },
+  metaRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    width: '92%', gap: 4,
+  },
+  diffStars: {
+    fontSize: 10, color: 'rgba(255,215,0,0.5)', letterSpacing: 1,
+  },
+  playstyleBadge: {
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
+    borderWidth: 1, backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  playstyleText: {
+    fontSize: 7, fontFamily: 'Inter_700Bold', letterSpacing: 1.5,
   },
 });
