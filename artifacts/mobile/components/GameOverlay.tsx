@@ -1,7 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -451,6 +452,76 @@ export default function GameOverlay({
         )}
 
         <View style={styles.buttons}>
+          {isWin && Platform.OS === 'web' && (
+            <TouchableOpacity
+              style={[styles.shareBtn, { borderColor: accentColor + '55' }]}
+              onPress={async () => {
+                try {
+                  const c = document.createElement('canvas');
+                  c.width = 1080; c.height = 1080;
+                  const g = c.getContext('2d')!;
+                  // Background
+                  const bg = g.createRadialGradient(540, 540, 0, 540, 540, 600);
+                  bg.addColorStop(0, '#1a1a2e'); bg.addColorStop(1, '#0a0a0f');
+                  g.fillStyle = bg; g.fillRect(0, 0, 1080, 1080);
+                  // Empire glow
+                  const eg = g.createRadialGradient(540, 380, 0, 540, 380, 300);
+                  eg.addColorStop(0, (accentColor || '#FFD700') + '40'); eg.addColorStop(1, 'transparent');
+                  g.fillStyle = eg; g.fillRect(0, 0, 1080, 1080);
+                  // Stars
+                  for (let i = 0; i < 40; i++) {
+                    g.beginPath(); g.arc(Math.random()*1080, Math.random()*1080, Math.random()*2+0.5, 0, Math.PI*2);
+                    g.fillStyle = `rgba(255,255,255,${(Math.random()*0.5+0.2).toFixed(2)})`; g.fill();
+                  }
+                  // THRAXON title
+                  const tg = g.createLinearGradient(300, 80, 780, 120);
+                  tg.addColorStop(0, '#8B6914'); tg.addColorStop(0.5, '#FFD700'); tg.addColorStop(1, '#8B6914');
+                  g.fillStyle = tg; g.font = 'bold 72px Arial'; g.textAlign = 'center'; g.fillText('THRAXON', 540, 120);
+                  g.fillStyle = 'rgba(255,215,0,0.5)'; g.font = '20px Arial'; g.fillText('thraxon.app', 540, 160);
+                  // Empire name
+                  g.fillStyle = accentColor || '#FFD700'; g.font = 'bold 36px Arial';
+                  g.fillText((playerEmpire?.empire || 'Empire').toUpperCase(), 540, 420);
+                  g.fillStyle = 'rgba(255,255,255,0.5)'; g.font = '20px Arial';
+                  g.fillText(playerEmpire?.leader || '', 540, 460);
+                  // Result
+                  const rg = g.createLinearGradient(200, 520, 880, 580);
+                  rg.addColorStop(0, '#8B6914'); rg.addColorStop(0.5, '#FFD700'); rg.addColorStop(1, '#8B6914');
+                  g.fillStyle = rg; g.font = 'bold 80px Arial';
+                  g.fillText(gameMode === 'regicide' ? 'REGICIDE' : 'CONQUEST', 540, 580);
+                  g.fillStyle = 'white'; g.font = 'bold 40px Arial';
+                  g.fillText(gameMode === 'regicide' ? 'ACHIEVED' : 'COMPLETE', 540, 640);
+                  // Stats
+                  g.font = '16px Arial'; g.fillStyle = 'rgba(255,255,255,0.5)';
+                  g.fillText('TIME', 350, 740); g.fillText('NODES CAPTURED', 730, 740);
+                  g.font = 'bold 28px Arial'; g.fillStyle = 'white';
+                  g.fillText(formatTime(elapsedMs), 350, 775);
+                  g.fillText(String(nodesCaptures || 0), 730, 775);
+                  // Footer
+                  g.fillStyle = 'rgba(255,215,0,0.6)'; g.font = '22px Arial';
+                  g.fillText('Play free at thraxon.app', 540, 950);
+                  g.fillStyle = 'rgba(255,255,255,0.2)'; g.font = '14px Arial';
+                  g.fillText('\u00A9 2026 THRAXON', 540, 1040);
+                  // Share or download
+                  const dataUrl = c.toDataURL('image/png');
+                  if (navigator.share) {
+                    const res = await fetch(dataUrl);
+                    const blob = await res.blob();
+                    const file = new File([blob], 'thraxon-victory.png', { type: 'image/png' });
+                    if ((navigator as any).canShare?.({ files: [file] })) {
+                      await navigator.share({ title: 'THRAXON Victory', files: [file] });
+                    } else {
+                      const a = document.createElement('a'); a.download = 'thraxon-victory.png'; a.href = dataUrl; a.click();
+                    }
+                  } else {
+                    const a = document.createElement('a'); a.download = 'thraxon-victory.png'; a.href = dataUrl; a.click();
+                  }
+                } catch {}
+              }}
+              activeOpacity={0.7}>
+              <Feather name="share-2" size={16} color={accentColor} />
+              <Text style={[styles.shareText, { color: accentColor }]}>SHARE VICTORY</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={[
               styles.primaryBtn,
@@ -645,5 +716,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter_600SemiBold',
     letterSpacing: 1,
+  },
+  shareBtn: {
+    height: 44,
+    borderRadius: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+  },
+  shareText: {
+    fontSize: 13,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1.5,
   },
 });

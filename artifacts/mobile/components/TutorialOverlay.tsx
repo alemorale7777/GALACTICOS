@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Platform,
@@ -18,34 +18,53 @@ interface Props {
 
 const STEPS = [
   {
-    icon: 'shield' as const,
-    title: 'Your Castles',
-    body: 'Your castles train soldiers over time. The number shows your garrison. Capital castles (crown icon) generate units faster and are strategically valuable.',
+    icon: 'target' as const,
+    title: 'Tap to Select',
+    body: 'Tap one of your castles to select it. The number shows your garrison — soldiers training inside.',
     color: Colors.playerPlanet,
+    hint: '👆 Tap your node',
   },
   {
     icon: 'move' as const,
-    title: 'March & Conquer',
-    body: 'Touch your castle and drag to a target to send troops. Outnumber defenders to capture. Fortress nodes need extra troops, Barracks produce faster, and Ruins transform into Barracks once captured.',
+    title: 'Drag to Attack',
+    body: 'Drag from your castle to a target to send troops. Outnumber the defenders to capture it!',
     color: Colors.lineColor,
+    hint: '↗ Drag to attack',
   },
   {
     icon: 'sliders' as const,
-    title: 'Army Size & Select All',
-    body: 'Choose 25%, 50%, or 75% of your garrison. Tap ALL to select every castle — then drag to march from all simultaneously.',
+    title: 'Army Size',
+    body: 'Choose 25%, 50%, or 75% of your garrison to send. Use ALL to select every castle at once.',
     color: '#FFAA00',
+    hint: 'Choose your army size',
   },
   {
     icon: 'zap' as const,
     title: 'Empire Abilities',
-    body: 'Each empire has a unique ability with its own cooldown. Egypt boosts production, Rome shields fleets, Mongols gain speed, Ptolemaic creates illusions. Time it right!',
+    body: 'Each empire has a unique ability with a cooldown timer. Egypt boosts production, Rome shields fleets, Mongols gain speed. Time it right!',
     color: Colors.abilityReady,
+    hint: '⚡ Tap when ready',
+  },
+  {
+    icon: 'layers' as const,
+    title: 'Double Tap = Select All',
+    body: 'Double-tap anywhere to select ALL your castles at once. Then drag to send your entire army!',
+    color: '#CE93D8',
+    hint: '👆👆 Double tap',
+  },
+  {
+    icon: 'shield' as const,
+    title: 'Node Types',
+    body: 'Fortress nodes are tough to capture. Barracks produce faster. Capital (crown) generates 1.5x units. Ruins transform into Barracks when captured.',
+    color: '#80D8FF',
+    hint: 'Know your terrain',
   },
   {
     icon: 'flag' as const,
     title: 'Claim the Realm',
-    body: 'In Conquest mode, capture all enemy castles to win. In Regicide mode, capture the enemy King for instant victory! Larger maps have fog of war — Watchtower nodes reveal more area.',
+    body: 'In Conquest mode, capture all enemy castles. In Regicide mode, capture the enemy King for instant victory! Fog of war hides distant nodes on large maps.',
     color: '#FFD700',
+    hint: 'Victory awaits!',
   },
 ];
 
@@ -54,7 +73,23 @@ export default function TutorialOverlay({ onDone }: Props) {
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : insets.bottom;
   const [step, setStep] = useState(0);
+  const [complete, setComplete] = useState(false);
   const fadeAnim = useRef(new Animated.Value(1)).current;
+  const hintPulse = useRef(new Animated.Value(0.4)).current;
+  const completeScale = useRef(new Animated.Value(0)).current;
+  const completeOpacity = useRef(new Animated.Value(0)).current;
+
+  // Hint pulse animation
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(hintPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(hintPulse, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
 
   const goTo = (next: number) => {
     Haptics.selectionAsync();
@@ -64,19 +99,53 @@ export default function TutorialOverlay({ onDone }: Props) {
     });
   };
 
+  const handleComplete = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    setComplete(true);
+    Animated.parallel([
+      Animated.spring(completeScale, { toValue: 1, tension: 80, friction: 8, useNativeDriver: true }),
+      Animated.timing(completeOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+    ]).start();
+    setTimeout(() => {
+      Animated.timing(completeOpacity, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => onDone());
+    }, 1500);
+  };
+
   const current = STEPS[step];
   const isLast = step === STEPS.length - 1;
+
+  if (complete) {
+    return (
+      <Animated.View style={[styles.container, styles.completeContainer, { opacity: completeOpacity }]}>
+        <Animated.Text style={[styles.completeText, { transform: [{ scale: completeScale }] }]}>
+          YOU'RE READY, COMMANDER!
+        </Animated.Text>
+        <Animated.Text style={[styles.completeSubText, { transform: [{ scale: completeScale }] }]}>
+          Go conquer the realm
+        </Animated.Text>
+      </Animated.View>
+    );
+  }
 
   return (
     <View style={[styles.container, { paddingTop: topInset, paddingBottom: bottomInset }]}>
       <View style={styles.backdrop} />
 
+      {/* Hint text floating above card */}
+      <Animated.Text style={[styles.hintFloat, { opacity: hintPulse, color: current.color }]}>
+        {current.hint}
+      </Animated.Text>
+
       <View style={styles.card}>
         <View style={styles.stepDots}>
-          {STEPS.map((_, i) => (
+          {STEPS.map((s, i) => (
             <View
               key={i}
-              style={[styles.dot, i === step && { backgroundColor: current.color, width: 20 }]}
+              style={[
+                styles.dot,
+                i === step && { backgroundColor: current.color, width: 20 },
+                i < step && { backgroundColor: 'rgba(255,255,255,0.5)' },
+              ]}
             />
           ))}
         </View>
@@ -87,6 +156,7 @@ export default function TutorialOverlay({ onDone }: Props) {
           </View>
           <Text style={[styles.title, { color: current.color }]}>{current.title}</Text>
           <Text style={styles.body}>{current.body}</Text>
+          <Text style={styles.stepCounter}>{step + 1} / {STEPS.length}</Text>
         </Animated.View>
 
         <View style={styles.actions}>
@@ -98,12 +168,8 @@ export default function TutorialOverlay({ onDone }: Props) {
           <TouchableOpacity
             style={[styles.nextBtn, { backgroundColor: current.color, flex: 1 }]}
             onPress={() => {
-              if (isLast) {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                onDone();
-              } else {
-                goTo(step + 1);
-              }
+              if (isLast) handleComplete();
+              else goTo(step + 1);
             }}
             activeOpacity={0.8}
           >
@@ -113,7 +179,7 @@ export default function TutorialOverlay({ onDone }: Props) {
         </View>
 
         {!isLast && (
-          <TouchableOpacity style={styles.skipBtn} onPress={onDone} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.skipBtn} onPress={() => { Haptics.selectionAsync(); onDone(); }} activeOpacity={0.7}>
             <Text style={styles.skipText}>Skip tutorial</Text>
           </TouchableOpacity>
         )}
@@ -128,9 +194,38 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     zIndex: 200,
   },
+  completeContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(6,10,4,0.88)',
+  },
+  completeText: {
+    fontSize: 28,
+    fontFamily: 'Inter_700Bold',
+    color: '#FFD700',
+    letterSpacing: 4,
+    textAlign: 'center',
+    textShadowColor: 'rgba(255,215,0,0.5)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 20,
+  } as any,
+  completeSubText: {
+    fontSize: 14,
+    fontFamily: 'Inter_500Medium',
+    color: 'rgba(255,220,140,0.5)',
+    letterSpacing: 2,
+    marginTop: 8,
+  },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(6,10,4,0.78)',
+  },
+  hintFloat: {
+    textAlign: 'center',
+    fontSize: 16,
+    fontFamily: 'Inter_600SemiBold',
+    letterSpacing: 1,
+    marginBottom: 16,
   },
   card: {
     backgroundColor: 'rgba(16,10,4,0.98)',
@@ -176,6 +271,12 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     textAlign: 'center',
     lineHeight: 22,
+  },
+  stepCounter: {
+    fontSize: 10,
+    color: 'rgba(255,220,140,0.25)',
+    fontFamily: 'Inter_500Medium',
+    letterSpacing: 2,
   },
   actions: {
     flexDirection: 'row',

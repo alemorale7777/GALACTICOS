@@ -15,6 +15,7 @@ import WorldMapScreen from '@/components/WorldMapScreen';
 import ClanScreen from '@/components/ClanScreen';
 import ReplayScreen from '@/components/ReplayScreen';
 import LocalMultiplayerSetup from '@/components/LocalMultiplayerSetup';
+import CampaignLoreScreen from '@/components/CampaignLoreScreen';
 
 import { Colors } from '@/constants/colors';
 import { EmpireConfig, EmpireId, GameMode, MapSize, EMPIRE_CONFIG, randomEmpireExcluding } from '@/constants/empires';
@@ -31,7 +32,7 @@ import { useTournament } from '@/hooks/useTournament';
 import { useClanSystem } from '@/hooks/useClanSystem';
 
 type AppScreen = 'start' | 'leader' | 'mapsize' | 'tutorial' | 'game'
-  | 'tournament' | 'campaign' | 'worldmap' | 'clan' | 'replays' | 'localmulti';
+  | 'tournament' | 'campaign' | 'campaignlore' | 'worldmap' | 'clan' | 'replays' | 'localmulti';
 
 // ─── Inner game view ──────────────────────────────────────────────────────
 interface GameViewProps {
@@ -588,11 +589,31 @@ export default function GameApp() {
             setAiEmpire(EMPIRE_CONFIG[randomEmpireExcluding(empireId)]);
             setDifficulty(map.difficulty < 0.4 ? 'easy' : map.difficulty < 0.7 ? 'medium' : 'hard');
             setMapSize(map.nodeCount <= 10 ? 'small' : map.nodeCount <= 16 ? 'medium' : 'large');
-            // Campaign maps 8-12 (index 7-11) use Regicide
             setRegicideMode(mapIdx >= 7 ? 'regicide' : 'conquest');
-            goToGame('campaign');
+            transitionTo('campaignlore');
           }}
           onBack={goToMenu}
+        />
+      </View>
+    );
+  }
+
+  if (screen === 'campaignlore') {
+    const campaignData = CAMPAIGNS[campaignEmpireId];
+    const mapData = campaignData.maps[campaignMapIdx];
+    const mapStars = campaign.getProgress(campaignEmpireId).stars[campaignMapIdx] || 0;
+    return (
+      <View style={styles.root}>
+        <StarField />
+        <CampaignLoreScreen
+          map={mapData}
+          mapIndex={campaignMapIdx}
+          totalMaps={campaignData.maps.length}
+          campaignTitle={campaignData.title}
+          empire={EMPIRE_CONFIG[campaignEmpireId]}
+          stars={mapStars}
+          onBegin={() => goToGame('campaign')}
+          onBack={() => transitionTo('campaign')}
         />
       </View>
     );

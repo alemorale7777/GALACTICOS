@@ -46,6 +46,53 @@ export function useSoundEngine() {
     })();
   }, []);
 
+  // iOS audio unlock: resume AudioContext on first user interaction
+  const audioUnlockedRef = useRef(false);
+  useEffect(() => {
+    if (!isWeb) return;
+    const unlock = () => {
+      if (audioUnlockedRef.current) return;
+      if (!ctxRef.current) {
+        ctxRef.current = getAudioContext();
+      }
+      const ctx = ctxRef.current;
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume().then(() => {
+          audioUnlockedRef.current = true;
+          // Play silent buffer to fully unlock iOS audio
+          const buf = ctx.createBuffer(1, 1, 22050);
+          const src = ctx.createBufferSource();
+          src.buffer = buf;
+          src.connect(ctx.destination);
+          src.start(0);
+        }).catch(() => {});
+      } else if (ctx) {
+        audioUnlockedRef.current = true;
+      }
+    };
+    document.addEventListener('touchstart', unlock, { passive: true });
+    document.addEventListener('touchend', unlock, { passive: true });
+    document.addEventListener('mousedown', unlock, { passive: true });
+    return () => {
+      document.removeEventListener('touchstart', unlock);
+      document.removeEventListener('touchend', unlock);
+      document.removeEventListener('mousedown', unlock);
+    };
+  }, []);
+
+  // Pause/resume audio on visibility change (background/foreground)
+  useEffect(() => {
+    if (!isWeb) return;
+    const handleVisibility = () => {
+      const ctx = ctxRef.current;
+      if (!ctx) return;
+      if (document.hidden) ctx.suspend().catch(() => {});
+      else ctx.resume().catch(() => {});
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
+
   const ensureContext = useCallback(() => {
     if (!isWeb) return null;
     if (!ctxRef.current) {

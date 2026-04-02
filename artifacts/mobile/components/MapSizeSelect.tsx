@@ -97,7 +97,19 @@ export default function MapSizeSelect({ onSelect }: Props) {
                 activeOpacity={0.8}>
                 <View style={[styles.cardColorBar, { backgroundColor: ms.color }]} />
                 <View style={[styles.iconWrap, { backgroundColor: ms.color + '22' }]}>
-                  <Feather name={ms.icon} size={28} color={ms.color} />
+                  <View style={styles.previewGrid}>
+                    {Array.from({ length: ms.key === 'small' ? 10 : ms.key === 'medium' ? 16 : 24 }).map((_, di) => (
+                      <View key={di} style={[
+                        styles.previewDot,
+                        {
+                          backgroundColor: di < 2 ? (ms.color + 'CC') : di < 3 ? '#EE334499' : '#8D6E6366',
+                          width: ms.key === 'large' ? 4 : 5,
+                          height: ms.key === 'large' ? 4 : 5,
+                          borderRadius: ms.key === 'large' ? 2 : 2.5,
+                        },
+                      ]} />
+                    ))}
+                  </View>
                 </View>
                 <View style={styles.textGroup}>
                   <View style={styles.nameRow}>
@@ -212,6 +224,15 @@ const styles = StyleSheet.create({
   iconWrap: {
     width: 52, height: 52, borderRadius: 26,
     justifyContent: 'center', alignItems: 'center',
+    overflow: 'hidden',
+  },
+  previewGrid: {
+    flexDirection: 'row', flexWrap: 'wrap',
+    justifyContent: 'center', alignItems: 'center',
+    gap: 2, padding: 4,
+  },
+  previewDot: {
+    width: 5, height: 5, borderRadius: 2.5,
   },
   textGroup: { flex: 1, gap: 4 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
