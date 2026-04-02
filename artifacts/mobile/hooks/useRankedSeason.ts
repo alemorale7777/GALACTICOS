@@ -59,6 +59,7 @@ export function getMasteryProgress(xp: number): { level: number; current: number
 export function getMasteryTitle(empireId: EmpireId, level: number): string | null {
   const names: Record<EmpireId, string> = {
     egypt: 'Egypt', rome: 'Rome', mongols: 'the Mongols', ptolemaic: 'Ptolemaic', japan: 'Japan',
+    vikings: 'the Vikings', aztec: 'the Aztecs', persian: 'Persia', ottoman: 'the Ottomans', han: 'the Han',
   };
   if (level >= 50) return `Prestige Master of ${names[empireId]}`;
   if (level >= 25) return `Champion of ${names[empireId]}`;
@@ -87,8 +88,8 @@ const DEFAULT_DATA: RankedData = {
   rank: 'Squire',
   seasonStart: Date.now(),
   lastSeasonRank: null,
-  empireXP: { egypt: 0, rome: 0, mongols: 0, ptolemaic: 0, japan: 0 },
-  empireMastery: { egypt: 1, rome: 1, mongols: 1, ptolemaic: 1, japan: 1 },
+  empireXP: { egypt: 0, rome: 0, mongols: 0, ptolemaic: 0, japan: 0, vikings: 0, aztec: 0, persian: 0, ottoman: 0, han: 0 },
+  empireMastery: { egypt: 1, rome: 1, mongols: 1, ptolemaic: 1, japan: 1, vikings: 1, aztec: 1, persian: 1, ottoman: 1, han: 1 },
   totalGames: 0,
   totalWins: 0,
   bestTime: null,

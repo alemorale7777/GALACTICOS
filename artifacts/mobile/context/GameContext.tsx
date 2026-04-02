@@ -382,6 +382,22 @@ function resolveCombat(fleet: Fleet, planets: Planet[], state: GameState): Plane
       attackUnits = Math.round(fleet.units * 1.4);
     }
 
+    // Berserker Rage (Vikings): 2x damage
+    if (state.abilityActive && state.playerEmpireId === 'vikings' && fleet.owner === 1) {
+      attackUnits = Math.round(fleet.units * 2.0);
+    }
+    if (state.aiAbilityActive && state.aiEmpireId === 'vikings' && fleet.owner === 2) {
+      attackUnits = Math.round(fleet.units * 2.0);
+    }
+
+    // Great Wall (Han): target node takes zero damage if fortified
+    const isGreatWallPlayer = state.abilityActive && state.playerEmpireId === 'han' && p.owner === 1;
+    const isGreatWallAI = state.aiAbilityActive && state.aiEmpireId === 'han' && p.owner === 2;
+    if (isGreatWallPlayer || isGreatWallAI) {
+      // Node is invulnerable — attacker does nothing, units are lost
+      return p;
+    }
+
     // Defense multiplier from node type
     const defMult = DEFENSE_MULT[p.nodeType];
     const effectiveDefense = Math.round(p.units * defMult);
@@ -393,9 +409,20 @@ function resolveCombat(fleet: Fleet, planets: Planet[], state: GameState): Plane
         || (state.aiAbilityActive && state.aiEmpireId === 'rome' && fleet.owner === 2);
       const isBushido = (state.abilityActive && state.playerEmpireId === 'japan' && fleet.owner === 1)
         || (state.aiAbilityActive && state.aiEmpireId === 'japan' && fleet.owner === 2);
-      const abilityMult = isTestudo ? 1.5 : isBushido ? 1.4 : 1.0;
+      const isBerserker = (state.abilityActive && state.playerEmpireId === 'vikings' && fleet.owner === 1)
+        || (state.aiAbilityActive && state.aiEmpireId === 'vikings' && fleet.owner === 2);
+      const abilityMult = isTestudo ? 1.5 : isBushido ? 1.4 : isBerserker ? 2.0 : 1.0;
       const actualRemaining = abilityMult > 1 ? Math.round(remainingAttack / abilityMult) : remainingAttack;
       return { ...p, owner: fleet.owner as 0 | 1 | 2, units: Math.max(1, actualRemaining) };
+    }
+
+    // Immortal Legion (Persian): units survive transit — always capture with at least 1
+    const isImmortalPlayer = state.abilityActive && state.playerEmpireId === 'persian' && fleet.owner === 1;
+    const isImmortalAI = state.aiAbilityActive && state.aiEmpireId === 'persian' && fleet.owner === 2;
+    if (isImmortalPlayer || isImmortalAI) {
+      // Force capture: fleet always wins with at least 1 unit
+      const reduced = Math.max(1, Math.round(p.units * 0.3)); // Keep 30% of defense as conquered units
+      return { ...p, owner: fleet.owner as 0 | 1 | 2, units: Math.max(1, fleet.units - Math.floor(p.units * 0.5)) };
     }
 
     const remainingDefense = effectiveDefense - attackUnits;
@@ -463,6 +490,28 @@ function aiUseAbility(state: GameState): void {
       return target && target.owner === 2;
     });
     shouldUse = incomingAttacks.length >= 2;
+  } else if (empireId === 'vikings') {
+    // Berserker when attacking 2+ enemy nodes
+    const attackFleets = state.fleets.filter(f => f.owner === 2 && f.progress < 0.6);
+    shouldUse = attackFleets.length >= 2 && Math.random() < 0.4;
+  } else if (empireId === 'aztec') {
+    // Blood Sacrifice when owning 6+ nodes with 30+ units on majority
+    const aiNodes = state.planets.filter(p => p.owner === 2);
+    const strongNodes = aiNodes.filter(p => p.units >= 30);
+    shouldUse = aiNodes.length >= 6 && strongNodes.length >= aiNodes.length * 0.5;
+  } else if (empireId === 'persian') {
+    // Immortal Legion for long-distance raids
+    const aiFleets = state.fleets.filter(f => f.owner === 2 && f.progress < 0.3);
+    shouldUse = aiFleets.length >= 1 && Math.random() < 0.35;
+  } else if (empireId === 'ottoman') {
+    // Grand Bazaar when neutral nodes exist
+    const neutralCount = state.planets.filter(p => p.owner === 0).length;
+    shouldUse = neutralCount >= 3 && Math.random() < 0.4;
+  } else if (empireId === 'han') {
+    // Great Wall on capital when under attack
+    const aiCapital = state.planets.find(p => p.id === 1);
+    const capitalThreat = state.fleets.filter(f => f.owner === 1 && f.toId === 1);
+    shouldUse = aiCapital !== undefined && aiCapital.owner === 2 && capitalThreat.length > 0;
   }
 
   if (shouldUse) {
@@ -722,6 +771,22 @@ function tick(state: GameState, dt: number): void {
         rate *= 1.6;
       }
 
+      // Berserker Rage (Vikings): -40% generation during rage
+      if (state.abilityActive && state.playerEmpireId === 'vikings' && p.owner === 1) {
+        rate *= 0.6;
+      }
+      if (state.aiAbilityActive && state.aiEmpireId === 'vikings' && p.owner === 2) {
+        rate *= 0.6;
+      }
+
+      // Blood Sacrifice (Aztec): 3x generation rate during ability
+      if (state.abilityActive && state.playerEmpireId === 'aztec' && p.owner === 1) {
+        rate *= 3.0;
+      }
+      if (state.aiAbilityActive && state.aiEmpireId === 'aztec' && p.owner === 2) {
+        rate *= 3.0;
+      }
+
       p.units = Math.min(p.units + rate * dt * 60, 999);
     }
 
@@ -731,6 +796,27 @@ function tick(state: GameState, dt: number): void {
       if (p.ruinsTimer <= 0) {
         p.nodeType = 'barracks';
         p.ruinsTimer = 0;
+      }
+    }
+  }
+
+  // ── Grand Bazaar: neutral nodes generate units for Ottoman player ────────
+  const ottomanPlayerActive = state.abilityActive && state.playerEmpireId === 'ottoman';
+  const ottomanAIActive = state.aiAbilityActive && state.aiEmpireId === 'ottoman';
+  if (ottomanPlayerActive || ottomanAIActive) {
+    const owner: 1 | 2 = ottomanPlayerActive ? 1 : 2;
+    for (let i = 0; i < state.planets.length; i++) {
+      const p = state.planets[i];
+      if (p.owner !== 0) continue;
+      // Find nearest owned node and add units to it
+      let nearestDist = Infinity, nearestIdx = -1;
+      for (let j = 0; j < state.planets.length; j++) {
+        if (state.planets[j].owner !== owner) continue;
+        const d = dist(p.x, p.y, state.planets[j].x, state.planets[j].y);
+        if (d < nearestDist) { nearestDist = d; nearestIdx = j; }
+      }
+      if (nearestIdx >= 0) {
+        state.planets[nearestIdx].units = Math.min(999, state.planets[nearestIdx].units + 0.3 * dt * 60);
       }
     }
   }
@@ -1077,6 +1163,15 @@ export function GameProvider({
       for (const p of state.planets) {
         if (p.owner === 1) {
           state.mirageOffsets[p.id] = 0.6 + Math.random() * 0.8;
+        }
+      }
+    }
+
+    // Blood Sacrifice (Aztec): sacrifice 30% of units on all owned nodes instantly
+    if (empireId === 'aztec') {
+      for (const p of state.planets) {
+        if (p.owner === 1) {
+          p.units = Math.max(1, Math.round(p.units * 0.7));
         }
       }
     }

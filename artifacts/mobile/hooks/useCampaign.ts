@@ -94,12 +94,92 @@ const JAPAN_CAMPAIGN: CampaignMap[] = [
   { id: 11, name: 'Emperor of the Sun', lore: 'From the Land of the Rising Sun, extend your rule across all of Asia.', nodeCount: 20, timeLimit: 540, difficulty: 1.0 },
 ];
 
+const VIKINGS_CAMPAIGN: CampaignMap[] = [
+  { id: 0, name: 'From the Fjords', lore: 'The icy fjords breed hard warriors. Gather your longships and set sail for glory.', nodeCount: 8, timeLimit: 240, difficulty: 0.1 },
+  { id: 1, name: 'Lindisfarne', lore: 'The monastery on the holy island holds untold riches. Strike fast before word spreads.', nodeCount: 10, timeLimit: 300, difficulty: 0.2 },
+  { id: 2, name: 'Norse Settlement', lore: 'Fertile land awaits across the sea. Carve a new home from the wilderness.', nodeCount: 10, timeLimit: 280, difficulty: 0.25 },
+  { id: 3, name: 'River Kings', lore: 'Navigate the great rivers east into Slavic lands. Trade or raid — the choice is yours.', nodeCount: 12, timeLimit: 300, difficulty: 0.3 },
+  { id: 4, name: 'Danelaw', lore: 'Half of England bows to Norse law. Enforce your rule over the Saxon holdouts.', nodeCount: 12, timeLimit: 320, difficulty: 0.4 },
+  { id: 5, name: 'Siege of Paris', lore: 'The Frankish capital sits behind mighty walls. Starve them out or storm the gates.', nodeCount: 14, timeLimit: 360, difficulty: 0.45 },
+  { id: 6, name: 'Iceland Bound', lore: 'A volcanic island at the edge of the world. Only the bold survive its fire and ice.', nodeCount: 14, timeLimit: 360, difficulty: 0.5 },
+  { id: 7, name: 'Vinland Saga', lore: 'Legends speak of a green land far to the west. Cross the open ocean and claim it.', nodeCount: 16, timeLimit: 420, difficulty: 0.6 },
+  { id: 8, name: 'Jomsvikings', lore: 'The elite warrior brotherhood answers to no king. Bend them to your will or be destroyed.', nodeCount: 16, timeLimit: 420, difficulty: 0.65 },
+  { id: 9, name: 'Norman Conquest', lore: 'Your descendants will reshape the world. Cross the channel and seize a crown.', nodeCount: 18, timeLimit: 480, difficulty: 0.75 },
+  { id: 10, name: 'Ragnarok Rising', lore: 'The old gods stir. Darkness spreads across Midgard and only war can hold it back.', nodeCount: 18, timeLimit: 480, difficulty: 0.85 },
+  { id: 11, name: 'Valhalla\'s Gate', lore: 'The final battle awaits. Fight with the fury of Odin and earn your seat in the golden hall.', nodeCount: 20, timeLimit: 540, difficulty: 1.0 },
+];
+
+const AZTEC_CAMPAIGN: CampaignMap[] = [
+  { id: 0, name: 'Children of the Sun', lore: 'The Mexica people wander in search of a sign — an eagle on a cactus, devouring a serpent.', nodeCount: 8, timeLimit: 240, difficulty: 0.1 },
+  { id: 1, name: 'Tenochtitlan Founded', lore: 'Build the great city on the lake. Causeways and canals will make it impregnable.', nodeCount: 10, timeLimit: 300, difficulty: 0.2 },
+  { id: 2, name: 'Eagle Warriors', lore: 'Train the fiercest warriors under the sun. Only those who capture enemies alive earn glory.', nodeCount: 10, timeLimit: 280, difficulty: 0.25 },
+  { id: 3, name: 'Flower Wars', lore: 'Ritual combat to feed the gods. Each captive fuels the sun\'s journey across the sky.', nodeCount: 12, timeLimit: 300, difficulty: 0.3 },
+  { id: 4, name: 'Triple Alliance', lore: 'Forge the alliance of Tenochtitlan, Texcoco, and Tlacopan. Together, none can oppose you.', nodeCount: 12, timeLimit: 320, difficulty: 0.4 },
+  { id: 5, name: 'Jade Conquest', lore: 'The southern jungles hold jade, cacao, and feathers. Subjugate the Maya city-states.', nodeCount: 14, timeLimit: 360, difficulty: 0.45 },
+  { id: 6, name: 'Obsidian Edge', lore: 'Volcanic glass sharper than steel arms your macuahuitl warriors. Cut through all resistance.', nodeCount: 14, timeLimit: 360, difficulty: 0.5 },
+  { id: 7, name: 'Temple of Blood', lore: 'The Great Pyramid demands sacrifice. Conquer enough captives to appease Huitzilopochtli.', nodeCount: 16, timeLimit: 420, difficulty: 0.6 },
+  { id: 8, name: 'Quetzalcoatl\'s Return', lore: 'Omens fill the sky. The feathered serpent\'s prophecy stirs unrest across the empire.', nodeCount: 16, timeLimit: 420, difficulty: 0.65 },
+  { id: 9, name: 'Empire of Gold', lore: 'Tribute flows from every corner of Mesoamerica. Defend your wealth from jealous neighbors.', nodeCount: 18, timeLimit: 480, difficulty: 0.75 },
+  { id: 10, name: 'Jaguar Throne', lore: 'The jaguar warriors challenge for the throne. Prove your bloodline is divine.', nodeCount: 18, timeLimit: 480, difficulty: 0.85 },
+  { id: 11, name: 'The Last Sacrifice', lore: 'The Fifth Sun demands one final offering. Win this war or the world itself will end.', nodeCount: 20, timeLimit: 540, difficulty: 1.0 },
+];
+
+const PERSIAN_CAMPAIGN: CampaignMap[] = [
+  { id: 0, name: 'Rise of Persia', lore: 'From the highlands of Fars, Cyrus gathers the Persian tribes under one banner.', nodeCount: 8, timeLimit: 240, difficulty: 0.1 },
+  { id: 1, name: 'Pasargadae', lore: 'Build the first capital of the Achaemenid dynasty. A city worthy of kings.', nodeCount: 10, timeLimit: 300, difficulty: 0.2 },
+  { id: 2, name: 'Median Alliance', lore: 'The Medes were once your overlords. Now forge them into loyal allies — or subjects.', nodeCount: 10, timeLimit: 280, difficulty: 0.25 },
+  { id: 3, name: 'Lydian Gold', lore: 'King Croesus boasts of infinite wealth. Take it and fund the greatest empire on earth.', nodeCount: 12, timeLimit: 300, difficulty: 0.3 },
+  { id: 4, name: 'Fall of Babylon', lore: 'The ancient city falls without a siege. Divert the river and march through the gates.', nodeCount: 12, timeLimit: 320, difficulty: 0.4 },
+  { id: 5, name: 'Royal Road', lore: 'Connect Susa to Sardis. Messengers will cross the empire in days, not months.', nodeCount: 14, timeLimit: 360, difficulty: 0.45 },
+  { id: 6, name: 'Ionian Revolt', lore: 'Greek colonies on the coast rise in rebellion. Crush them before the fire spreads.', nodeCount: 14, timeLimit: 360, difficulty: 0.5 },
+  { id: 7, name: 'Marathon\'s Shadow', lore: 'The Athenians defied you on the plain of Marathon. This insult cannot stand.', nodeCount: 16, timeLimit: 420, difficulty: 0.6 },
+  { id: 8, name: 'Thermopylae', lore: 'Three hundred Spartans block the pass. Break through or find another way.', nodeCount: 16, timeLimit: 420, difficulty: 0.65 },
+  { id: 9, name: 'Persepolis Rising', lore: 'Build the ceremonial capital that will awe every nation. Columns of stone pierce the sky.', nodeCount: 18, timeLimit: 480, difficulty: 0.75 },
+  { id: 10, name: 'Immortal Guard', lore: 'Ten thousand elite soldiers who never diminish. Lead them to the edge of the known world.', nodeCount: 18, timeLimit: 480, difficulty: 0.85 },
+  { id: 11, name: 'From Persia to India', lore: 'The Indus Valley awaits. Extend the empire to its farthest reaches and become legend.', nodeCount: 20, timeLimit: 540, difficulty: 1.0 },
+];
+
+const OTTOMAN_CAMPAIGN: CampaignMap[] = [
+  { id: 0, name: 'Anatolian Dawn', lore: 'A small beylik in western Anatolia dreams of empire. Every great power starts with one step.', nodeCount: 8, timeLimit: 240, difficulty: 0.1 },
+  { id: 1, name: 'Bursa Falls', lore: 'The Byzantine fortress of Bursa falls after a long siege. Your first true capital rises.', nodeCount: 10, timeLimit: 300, difficulty: 0.2 },
+  { id: 2, name: 'Janissary Corps', lore: 'Forge the elite infantry that will terrify Europe for centuries. Discipline is everything.', nodeCount: 10, timeLimit: 280, difficulty: 0.25 },
+  { id: 3, name: 'Balkan March', lore: 'Cross into Europe and claim the fertile Balkans. The Christian kingdoms scramble to respond.', nodeCount: 12, timeLimit: 300, difficulty: 0.3 },
+  { id: 4, name: 'Kosovo Field', lore: 'The decisive battle for the Balkans. Two empires clash and only one walks away.', nodeCount: 12, timeLimit: 320, difficulty: 0.4 },
+  { id: 5, name: 'Constantinople', lore: 'The Queen of Cities has stood for a thousand years. Bring your great cannons and end an era.', nodeCount: 14, timeLimit: 360, difficulty: 0.45 },
+  { id: 6, name: 'Eastern Expansion', lore: 'The Safavids and Mamluks challenge Ottoman supremacy. Push east and south without mercy.', nodeCount: 14, timeLimit: 360, difficulty: 0.5 },
+  { id: 7, name: 'Siege of Vienna', lore: 'The gates of Europe stand before you. Break through and the continent lies open.', nodeCount: 16, timeLimit: 420, difficulty: 0.6 },
+  { id: 8, name: 'Mediterranean Fleet', lore: 'Build a navy to rival Venice and Spain. Control the sea lanes and choke all trade.', nodeCount: 16, timeLimit: 420, difficulty: 0.65 },
+  { id: 9, name: 'Suleiman\'s March', lore: 'The Magnificent Sultan leads his armies in person. None dare stand before his wrath.', nodeCount: 18, timeLimit: 480, difficulty: 0.75 },
+  { id: 10, name: 'Holy Cities', lore: 'Mecca and Medina fall under Ottoman protection. The Caliphate is reborn.', nodeCount: 18, timeLimit: 480, difficulty: 0.85 },
+  { id: 11, name: 'The Grand Vizier', lore: 'Rule three continents from the Sublime Porte. The Ottoman Empire reaches its zenith.', nodeCount: 20, timeLimit: 540, difficulty: 1.0 },
+];
+
+const HAN_CAMPAIGN: CampaignMap[] = [
+  { id: 0, name: 'Unity of Qin', lore: 'The warring states are shattered. From their ashes, forge a single nation under heaven.', nodeCount: 8, timeLimit: 240, difficulty: 0.1 },
+  { id: 1, name: 'Great Wall Rising', lore: 'Connect the northern walls into one unbroken barrier against the steppe nomads.', nodeCount: 10, timeLimit: 300, difficulty: 0.2 },
+  { id: 2, name: 'Yellow River', lore: 'Tame the river that gives life and takes it away. Control its floods and feed millions.', nodeCount: 10, timeLimit: 280, difficulty: 0.25 },
+  { id: 3, name: 'Terracotta Army', lore: 'An army of clay guards the emperor in death. Build a living army to match its splendor.', nodeCount: 12, timeLimit: 300, difficulty: 0.3 },
+  { id: 4, name: 'Xiongnu Border', lore: 'The horse nomads raid without end. Push them back beyond the Gobi or buy peace with silk.', nodeCount: 12, timeLimit: 320, difficulty: 0.4 },
+  { id: 5, name: 'Silk Road Opens', lore: 'Zhang Qian\'s journey opens the west. Trade flows and with it, power and influence.', nodeCount: 14, timeLimit: 360, difficulty: 0.45 },
+  { id: 6, name: 'Southern Expansion', lore: 'The lush lands of the south beckon. Rice paddies and jungle tribes await conquest.', nodeCount: 14, timeLimit: 360, difficulty: 0.5 },
+  { id: 7, name: 'Three Kingdoms', lore: 'The empire fractures into three. Wei, Shu, and Wu battle for the mandate of heaven.', nodeCount: 16, timeLimit: 420, difficulty: 0.6 },
+  { id: 8, name: 'Red Cliffs', lore: 'Fire ships on the Yangtze. The greatest naval battle in history decides the fate of China.', nodeCount: 16, timeLimit: 420, difficulty: 0.65 },
+  { id: 9, name: 'Dragon Throne', lore: 'Claim the seat of supreme power. The dragon throne is the heart of the Middle Kingdom.', nodeCount: 18, timeLimit: 480, difficulty: 0.75 },
+  { id: 10, name: 'Mandate of Heaven', lore: 'Heaven grants its blessing to the just ruler. Prove your virtue through conquest and order.', nodeCount: 18, timeLimit: 480, difficulty: 0.85 },
+  { id: 11, name: 'The Silk Road', lore: 'From Chang\'an to Rome, your influence spans the world. The Middle Kingdom stands supreme.', nodeCount: 20, timeLimit: 540, difficulty: 1.0 },
+];
+
 export const CAMPAIGNS: Record<EmpireId, { title: string; maps: CampaignMap[] }> = {
   egypt: { title: 'The March to Babylon', maps: EGYPT_CAMPAIGN },
   rome: { title: 'The Gallic Wars', maps: ROME_CAMPAIGN },
   mongols: { title: 'Ride to the West', maps: MONGOLS_CAMPAIGN },
   ptolemaic: { title: 'Nile to Mediterranean', maps: PTOLEMAIC_CAMPAIGN },
   japan: { title: 'Way of the Samurai', maps: JAPAN_CAMPAIGN },
+  vikings: { title: 'The Age of Raids', maps: VIKINGS_CAMPAIGN },
+  aztec: { title: 'The Fifth Sun', maps: AZTEC_CAMPAIGN },
+  persian: { title: 'The Achaemenid Dream', maps: PERSIAN_CAMPAIGN },
+  ottoman: { title: 'The Sublime Porte', maps: OTTOMAN_CAMPAIGN },
+  han: { title: 'The Middle Kingdom', maps: HAN_CAMPAIGN },
 };
 
 type AllProgress = Record<EmpireId, CampaignProgress>;
@@ -116,6 +196,11 @@ export function useCampaign() {
     mongols: { ...DEFAULT_PROGRESS, stars: [...DEFAULT_PROGRESS.stars] },
     ptolemaic: { ...DEFAULT_PROGRESS, stars: [...DEFAULT_PROGRESS.stars] },
     japan: { ...DEFAULT_PROGRESS, stars: [...DEFAULT_PROGRESS.stars] },
+    vikings: { ...DEFAULT_PROGRESS, stars: [...DEFAULT_PROGRESS.stars] },
+    aztec: { ...DEFAULT_PROGRESS, stars: [...DEFAULT_PROGRESS.stars] },
+    persian: { ...DEFAULT_PROGRESS, stars: [...DEFAULT_PROGRESS.stars] },
+    ottoman: { ...DEFAULT_PROGRESS, stars: [...DEFAULT_PROGRESS.stars] },
+    han: { ...DEFAULT_PROGRESS, stars: [...DEFAULT_PROGRESS.stars] },
   });
   const [loaded, setLoaded] = useState(false);
 

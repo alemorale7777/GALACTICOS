@@ -150,12 +150,216 @@ function JapanEmblem({ size, color }: { size: number; color: string }) {
   );
 }
 
+function VikingsEmblem({ size, color }: { size: number; color: string }) {
+  const cx = size / 2, cy = size / 2, r = size * 0.4;
+  const baseL = cx - r * 0.85, baseR = cx + r * 0.85;
+  const wallBot = cy + r * 0.5, wallTop = cy - r * 0.1;
+  const roofPeak = cy - r * 0.85;
+  const doorW = r * 0.2, doorH = r * 0.35;
+  return (
+    <Svg width={size} height={size}>
+      {/* Rectangular base */}
+      <Rect x={baseL} y={wallTop} width={baseR - baseL} height={wallBot - wallTop}
+        fill={color} opacity={0.9} />
+      {/* Curved dome roof */}
+      <Path d={`M${baseL.toFixed(1)},${wallTop.toFixed(1)} Q${cx.toFixed(1)},${roofPeak.toFixed(1)} ${baseR.toFixed(1)},${wallTop.toFixed(1)} Z`}
+        fill={color} opacity={0.9} />
+      {/* Door */}
+      <Rect x={cx - doorW} y={wallBot - doorH} width={doorW * 2} height={doorH}
+        fill="rgba(0,0,0,0.35)" />
+      {/* Crossed lines on front */}
+      <Line x1={baseL + r * 0.15} y1={wallTop + r * 0.05} x2={baseR - r * 0.15} y2={wallBot - r * 0.05}
+        stroke="rgba(255,255,255,0.25)" strokeWidth={1} />
+      <Line x1={baseR - r * 0.15} y1={wallTop + r * 0.05} x2={baseL + r * 0.15} y2={wallBot - r * 0.05}
+        stroke="rgba(255,255,255,0.25)" strokeWidth={1} />
+      {/* Ridge line */}
+      <Line x1={cx} y1={roofPeak + r * 0.08} x2={cx} y2={wallTop}
+        stroke="rgba(255,255,255,0.2)" strokeWidth={1} />
+    </Svg>
+  );
+}
+
+function AztecEmblem({ size, color }: { size: number; color: string }) {
+  const cx = size / 2, cy = size / 2, r = size * 0.4;
+  const bot = cy + r * 0.5, top = cy - r * 0.7;
+  const baseW = r * 0.95, topW = r * 0.3;
+  const templeH = r * 0.18;
+  const steps = 4;
+  // Build step pyramid path
+  let d = `M${(cx - baseW).toFixed(1)},${bot.toFixed(1)}`;
+  for (let i = 0; i < steps; i++) {
+    const frac = i / steps;
+    const nextFrac = (i + 1) / steps;
+    const w = baseW - (baseW - topW) * frac;
+    const nextW = baseW - (baseW - topW) * nextFrac;
+    const y = bot - (bot - top) * frac;
+    const nextY = bot - (bot - top) * nextFrac;
+    if (i === 0) {
+      d += ` L${(cx - w).toFixed(1)},${nextY.toFixed(1)}`;
+    } else {
+      d += ` L${(cx - w).toFixed(1)},${y.toFixed(1)} L${(cx - w).toFixed(1)},${nextY.toFixed(1)}`;
+    }
+  }
+  // Flat top
+  d += ` L${(cx - topW).toFixed(1)},${top.toFixed(1)} L${(cx + topW).toFixed(1)},${top.toFixed(1)}`;
+  // Right side steps (mirror)
+  for (let i = steps - 1; i >= 0; i--) {
+    const frac = i / steps;
+    const w = baseW - (baseW - topW) * frac;
+    const y = bot - (bot - top) * frac;
+    const nextFrac = (i + 1) / steps;
+    const nextY = bot - (bot - top) * nextFrac;
+    d += ` L${(cx + w).toFixed(1)},${nextY.toFixed(1)} L${(cx + w).toFixed(1)},${y.toFixed(1)}`;
+  }
+  d += ' Z';
+  return (
+    <Svg width={size} height={size}>
+      <Path d={d} fill={color} opacity={0.9} />
+      {/* Temple block on top */}
+      <Rect x={cx - topW * 0.6} y={top - templeH} width={topW * 1.2} height={templeH}
+        fill={color} opacity={0.85} />
+      {/* Step lines */}
+      {[0.25, 0.5, 0.75].map((f, i) => {
+        const y = bot - (bot - top) * f;
+        const w = baseW - (baseW - topW) * f;
+        return <Line key={i} x1={cx - w} y1={y} x2={cx + w} y2={y}
+          stroke="rgba(255,255,255,0.22)" strokeWidth={1} />;
+      })}
+    </Svg>
+  );
+}
+
+function PersianEmblem({ size, color }: { size: number; color: string }) {
+  const cx = size / 2, cy = size / 2, r = size * 0.4;
+  const baseBot = cy + r * 0.5, baseTop = cy - r * 0.35;
+  const baseW = r * 0.85;
+  const colW = r * 0.12;
+  const archTop = cy - r * 0.2;
+  const domeR = r * 0.2;
+  const domeY = baseTop - domeR * 0.3;
+  return (
+    <Svg width={size} height={size}>
+      {/* Base rectangle */}
+      <Rect x={cx - baseW} y={baseTop} width={baseW * 2} height={baseBot - baseTop}
+        fill={color} opacity={0.9} />
+      {/* Left column */}
+      <Rect x={cx - baseW + colW * 0.5} y={baseTop + r * 0.05}
+        width={colW} height={(baseBot - baseTop) * 0.85}
+        fill="rgba(255,255,255,0.15)" />
+      {/* Right column */}
+      <Rect x={cx + baseW - colW * 1.5} y={baseTop + r * 0.05}
+        width={colW} height={(baseBot - baseTop) * 0.85}
+        fill="rgba(255,255,255,0.15)" />
+      {/* Pointed arch doorway */}
+      <Path d={`M${(cx - r * 0.25).toFixed(1)},${baseBot.toFixed(1)} L${(cx - r * 0.25).toFixed(1)},${archTop.toFixed(1)} Q${cx.toFixed(1)},${(archTop - r * 0.25).toFixed(1)} ${(cx + r * 0.25).toFixed(1)},${archTop.toFixed(1)} L${(cx + r * 0.25).toFixed(1)},${baseBot.toFixed(1)} Z`}
+        fill="rgba(0,0,0,0.3)" />
+      {/* Small dome on top */}
+      <Circle cx={cx} cy={domeY} r={domeR} fill={color} opacity={0.85} />
+      {/* Dome highlight */}
+      <Path d={`M${(cx - domeR * 0.7).toFixed(1)},${domeY.toFixed(1)} Q${cx.toFixed(1)},${(domeY - domeR * 0.8).toFixed(1)} ${(cx + domeR * 0.7).toFixed(1)},${domeY.toFixed(1)}`}
+        stroke="rgba(255,255,255,0.25)" strokeWidth={1} fill="none" />
+    </Svg>
+  );
+}
+
+function OttomanEmblem({ size, color }: { size: number; color: string }) {
+  const cx = size / 2, cy = size / 2, r = size * 0.4;
+  const domeR = r * 0.55;
+  const domeY = cy - r * 0.05;
+  const baseBot = cy + r * 0.5;
+  const baseW = r * 0.7;
+  const minaretW = r * 0.08;
+  const minaretX = r * 0.75;
+  const minaretTop = cy - r * 0.75;
+  const crescentY = domeY - domeR - r * 0.08;
+  return (
+    <Svg width={size} height={size}>
+      {/* Base */}
+      <Rect x={cx - baseW} y={domeY} width={baseW * 2} height={baseBot - domeY}
+        fill={color} opacity={0.9} />
+      {/* Large dome */}
+      <Circle cx={cx} cy={domeY} r={domeR} fill={color} opacity={0.9} />
+      {/* Left minaret */}
+      <Rect x={cx - minaretX - minaretW / 2} y={minaretTop}
+        width={minaretW} height={baseBot - minaretTop}
+        fill={color} opacity={0.85} />
+      {/* Right minaret */}
+      <Rect x={cx + minaretX - minaretW / 2} y={minaretTop}
+        width={minaretW} height={baseBot - minaretTop}
+        fill={color} opacity={0.85} />
+      {/* Minaret caps */}
+      <Circle cx={cx - minaretX} cy={minaretTop} r={minaretW * 0.8} fill={color} opacity={0.85} />
+      <Circle cx={cx + minaretX} cy={minaretTop} r={minaretW * 0.8} fill={color} opacity={0.85} />
+      {/* Crescent on dome top */}
+      <Path d={`M${(cx + r * 0.05).toFixed(1)},${(crescentY - r * 0.1).toFixed(1)} A${(r * 0.08).toFixed(1)},${(r * 0.08).toFixed(1)} 0 1 1 ${(cx + r * 0.05).toFixed(1)},${(crescentY + r * 0.1).toFixed(1)} A${(r * 0.06).toFixed(1)},${(r * 0.06).toFixed(1)} 0 1 0 ${(cx + r * 0.05).toFixed(1)},${(crescentY - r * 0.1).toFixed(1)}`}
+        fill="rgba(255,255,255,0.5)" />
+      {/* Dome highlight arc */}
+      <Path d={`M${(cx - domeR * 0.6).toFixed(1)},${(domeY - domeR * 0.15).toFixed(1)} Q${cx.toFixed(1)},${(domeY - domeR * 0.95).toFixed(1)} ${(cx + domeR * 0.6).toFixed(1)},${(domeY - domeR * 0.15).toFixed(1)}`}
+        stroke="rgba(255,255,255,0.2)" strokeWidth={1} fill="none" />
+    </Svg>
+  );
+}
+
+function HanEmblem({ size, color }: { size: number; color: string }) {
+  const cx = size / 2, cy = size / 2, r = size * 0.4;
+  const bot = cy + r * 0.5;
+  const colW = r * 0.1;
+  const tiers = 3;
+  const totalH = r * 1.4;
+  const tierH = totalH / tiers;
+  const baseRoofW = r * 0.85;
+  const roofOverhang = r * 0.2;
+  const upturn = r * 0.1;
+
+  return (
+    <Svg width={size} height={size}>
+      {/* Central column */}
+      <Rect x={cx - colW / 2} y={bot - totalH} width={colW} height={totalH}
+        fill={color} opacity={0.7} />
+      {/* Tiered roofs */}
+      {Array.from({ length: tiers }).map((_, i) => {
+        const tierBot = bot - i * tierH;
+        const tierTop = tierBot - tierH * 0.35;
+        const roofW = baseRoofW * (1 - i * 0.25);
+        const ovr = roofOverhang * (1 - i * 0.15);
+        // Roof shape with upturned corners
+        const d = [
+          `M${(cx - roofW - ovr).toFixed(1)},${(tierBot - tierH * 0.2 - upturn).toFixed(1)}`,
+          `L${(cx - roofW).toFixed(1)},${(tierBot - tierH * 0.2).toFixed(1)}`,
+          `L${cx.toFixed(1)},${tierTop.toFixed(1)}`,
+          `L${(cx + roofW).toFixed(1)},${(tierBot - tierH * 0.2).toFixed(1)}`,
+          `L${(cx + roofW + ovr).toFixed(1)},${(tierBot - tierH * 0.2 - upturn).toFixed(1)}`,
+        ].join(' ');
+        return (
+          <G key={i}>
+            {/* Tier body */}
+            <Rect x={cx - roofW * 0.6} y={tierBot - tierH * 0.2}
+              width={roofW * 1.2} height={tierH * 0.2}
+              fill={color} opacity={0.85} />
+            {/* Roof */}
+            <Path d={d} fill={color} opacity={0.9} stroke="none" />
+            {/* Accent line under roof */}
+            <Line x1={cx - roofW * 0.5} y1={tierBot - tierH * 0.18}
+              x2={cx + roofW * 0.5} y2={tierBot - tierH * 0.18}
+              stroke="rgba(255,255,255,0.25)" strokeWidth={0.8} />
+          </G>
+        );
+      })}
+    </Svg>
+  );
+}
+
 const EMBLEM_RENDERERS: Record<EmpireId, (s: number, c: string) => React.ReactElement> = {
   egypt: (s, c) => <EgyptEmblem size={s} color={c} />,
   rome: (s, c) => <RomeEmblem size={s} color={c} />,
   mongols: (s, c) => <MongolsEmblem size={s} color={c} />,
   ptolemaic: (s, c) => <PtolemiacEmblem size={s} color={c} />,
   japan: (s, c) => <JapanEmblem size={s} color={c} />,
+  vikings: (s, c) => <VikingsEmblem size={s} color={c} />,
+  aztec: (s, c) => <AztecEmblem size={s} color={c} />,
+  persian: (s, c) => <PersianEmblem size={s} color={c} />,
+  ottoman: (s, c) => <OttomanEmblem size={s} color={c} />,
+  han: (s, c) => <HanEmblem size={s} color={c} />,
 };
 
 // ── Leader card ───────────────────────────────────────────────────────────────

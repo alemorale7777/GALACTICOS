@@ -305,6 +305,142 @@ function drawTorii(c: CanvasRenderingContext2D, x: number, y: number, r: number,
   c.beginPath(); c.arc(x, topBeam - r * 0.05, 2.5, 0, TWO_PI); c.fill();
 }
 
+function drawLonghouse(c: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, accent: string) {
+  const w = r * 1.2, h = r * 0.5;
+  const bot = y + h, top = y - r * 0.6;
+  // Rectangular base
+  c.fillStyle = color;
+  c.fillRect(x - w, y - h * 0.3, w * 2, h + h * 0.3);
+  // Curved roof
+  c.beginPath(); c.moveTo(x - w - 2, y - h * 0.3);
+  c.quadraticCurveTo(x, top, x + w + 2, y - h * 0.3);
+  c.fill();
+  // Door
+  c.fillStyle = 'rgba(0,0,0,0.35)';
+  c.fillRect(x - r * 0.12, bot - r * 0.3, r * 0.24, r * 0.3);
+  // Cross beams
+  c.strokeStyle = accent; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(x - w * 0.3, y - h * 0.3); c.lineTo(x + w * 0.3, y - h * 0.3); c.stroke();
+  // Outline
+  c.strokeStyle = accent; c.lineWidth = 1.5;
+  c.strokeRect(x - w, y - h * 0.3, w * 2, h + h * 0.3);
+}
+
+function drawStepPyramid(c: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, accent: string) {
+  const steps = 4, baseW = r * 1.4, baseY = y + r * 0.45;
+  c.fillStyle = color;
+  for (let i = 0; i < steps; i++) {
+    const frac = 1 - i / steps;
+    const sw = baseW * frac, sh = r * 0.25;
+    const sy = baseY - i * sh;
+    c.fillRect(x - sw, sy - sh, sw * 2, sh);
+  }
+  // Temple block on top
+  const topY = baseY - steps * r * 0.25;
+  c.fillRect(x - r * 0.15, topY - r * 0.2, r * 0.3, r * 0.2);
+  // Step lines
+  c.strokeStyle = 'rgba(0,0,0,0.2)'; c.lineWidth = 1;
+  for (let i = 1; i < steps; i++) {
+    const sy = baseY - i * r * 0.25;
+    const sw = baseW * (1 - i / steps);
+    c.beginPath(); c.moveTo(x - sw, sy); c.lineTo(x + sw, sy); c.stroke();
+  }
+  // Outline accent
+  c.strokeStyle = accent; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(x - baseW, baseY); c.lineTo(x + baseW, baseY); c.stroke();
+}
+
+function drawPalace(c: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, accent: string) {
+  const bot = y + r * 0.48, top = y - r * 0.5;
+  const w = r * 0.9;
+  // Main body
+  c.fillStyle = color;
+  c.fillRect(x - w, top, w * 2, bot - top);
+  // Columns
+  const colW = r * 0.08;
+  c.fillStyle = accent; c.globalAlpha = 0.3;
+  c.fillRect(x - w * 0.6, top + r * 0.1, colW, bot - top - r * 0.1);
+  c.fillRect(x + w * 0.6 - colW, top + r * 0.1, colW, bot - top - r * 0.1);
+  c.globalAlpha = 1;
+  // Pointed arch doorway
+  c.fillStyle = 'rgba(0,0,0,0.4)';
+  c.beginPath();
+  c.moveTo(x - r * 0.2, bot);
+  c.lineTo(x - r * 0.2, y);
+  c.quadraticCurveTo(x, y - r * 0.3, x + r * 0.2, y);
+  c.lineTo(x + r * 0.2, bot);
+  c.closePath(); c.fill();
+  // Dome on top
+  c.fillStyle = accent;
+  c.beginPath(); c.arc(x, top, r * 0.2, Math.PI, 0); c.fill();
+  // Outline
+  c.strokeStyle = accent; c.lineWidth = 1.5;
+  c.strokeRect(x - w, top, w * 2, bot - top);
+}
+
+function drawMosque(c: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, accent: string) {
+  const bot = y + r * 0.48, baseTop = y - r * 0.1;
+  const w = r * 0.8;
+  // Base
+  c.fillStyle = color;
+  c.fillRect(x - w, baseTop, w * 2, bot - baseTop);
+  // Large dome
+  c.beginPath(); c.arc(x, baseTop, r * 0.6, Math.PI, 0);
+  c.fillStyle = color; c.fill();
+  // Crescent on dome
+  const crescentY = baseTop - r * 0.6 - 3;
+  c.fillStyle = accent;
+  c.beginPath(); c.arc(x, crescentY, 3, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.arc(x + 1.5, crescentY, 2.5, 0, Math.PI * 2);
+  c.fillStyle = color; c.fill();
+  // Minarets
+  const mW = r * 0.06;
+  c.fillStyle = color;
+  c.fillRect(x - w - mW, baseTop - r * 0.5, mW, r * 0.5 + bot - baseTop);
+  c.fillRect(x + w, baseTop - r * 0.5, mW, r * 0.5 + bot - baseTop);
+  // Minaret caps
+  c.fillStyle = accent; c.globalAlpha = 0.5;
+  c.beginPath(); c.arc(x - w - mW / 2, baseTop - r * 0.5, mW, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.arc(x + w + mW / 2, baseTop - r * 0.5, mW, 0, Math.PI * 2); c.fill();
+  c.globalAlpha = 1;
+  // Doorway
+  c.fillStyle = 'rgba(0,0,0,0.35)';
+  c.beginPath(); c.arc(x, bot - r * 0.2, r * 0.12, Math.PI, 0);
+  c.lineTo(x + r * 0.12, bot); c.lineTo(x - r * 0.12, bot); c.closePath(); c.fill();
+  // Outline
+  c.strokeStyle = accent; c.lineWidth = 1;
+  c.strokeRect(x - w, baseTop, w * 2, bot - baseTop);
+}
+
+function drawPagoda(c: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, accent: string) {
+  const bot = y + r * 0.48;
+  const tiers = 3;
+  c.fillStyle = color;
+  for (let i = 0; i < tiers; i++) {
+    const frac = 1 - i * 0.25;
+    const tw = r * 0.9 * frac;
+    const th = r * 0.28;
+    const ty = bot - i * th - th;
+    // Body
+    c.fillRect(x - tw * 0.7, ty, tw * 1.4, th);
+    // Roof with upturned corners
+    c.beginPath();
+    c.moveTo(x - tw - r * 0.15, ty + r * 0.06);
+    c.quadraticCurveTo(x, ty - r * 0.08, x + tw + r * 0.15, ty + r * 0.06);
+    c.lineTo(x + tw, ty + r * 0.02);
+    c.lineTo(x - tw, ty + r * 0.02);
+    c.closePath(); c.fill();
+  }
+  // Spire
+  const topY = bot - tiers * r * 0.28 - r * 0.28;
+  c.fillStyle = accent;
+  c.beginPath(); c.moveTo(x, topY - r * 0.15); c.lineTo(x - 2, topY); c.lineTo(x + 2, topY); c.closePath(); c.fill();
+  // Accent lines
+  c.strokeStyle = accent; c.lineWidth = 0.8; c.globalAlpha = 0.4;
+  c.beginPath(); c.moveTo(x - r * 0.3, bot); c.lineTo(x + r * 0.3, bot); c.stroke();
+  c.globalAlpha = 1;
+}
+
 function drawCastle(c: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, accent: string) {
   const bot = y + r * 0.52, wL = x - r, wR = x + r, wTop = y - r * 0.08;
   const kTop = wTop - r * 1.08, kL = x - r * 0.3, kR = x + r * 0.3;
@@ -397,6 +533,16 @@ const SHIELD_PTS = [[5, -4], [5, 4], [-4, 4], [-5, 2], [-5, -2], [-4, -4]];
 const HORSE_PTS = [[8, 0], [3, 4.5], [-4, 4], [-6, 0], [-4, -4], [3, -4.5]];
 // Ankh: simplified cross with loop
 const ANKH_PTS = [[0, -7], [2.5, -5], [2.5, -2], [5, -2], [5, 2], [2.5, 2], [2.5, 6], [-2.5, 6], [-2.5, 2], [-5, 2], [-5, -2], [-2.5, -2], [-2.5, -5]];
+// Viking ship: elongated oval with dragon head
+const VIKING_SHIP_PTS = [[8, 0], [5, 3.5], [-5, 3], [-7, 0], [-5, -3], [5, -3.5]];
+// Warrior: circle body with headdress fan
+const WARRIOR_PTS = [[4, 0], [2, 4], [-3, 4], [-4, 0], [-3, -4], [2, -4]];
+// Immortal: rectangle with spear
+const IMMORTAL_PTS = [[7, 0], [3, 3], [-4, 3], [-5, 0], [-4, -3], [3, -3]];
+// Janissary: tall rectangle with hat
+const JANISSARY_PTS = [[5, 0], [3, 4], [-3, 4], [-5, 0], [-3, -4], [3, -4]];
+// Han soldier: circle with banner
+const HAN_SOLDIER_PTS = [[6, 0], [3, 4], [-4, 3.5], [-5, 0], [-4, -3.5], [3, -4]];
 // Default troop
 const TROOP_PTS = [[6, 0], [3.5, 4.5], [-3, 4], [-4, 0], [-3, -4], [3.5, -4.5]];
 
@@ -470,6 +616,40 @@ function drawUnit(c: CanvasRenderingContext2D, bx: number, by: number, angle: nu
       c.stroke();
       break;
     }
+    case 'viking_ship':
+      drawRotatedPoly(c, bx, by, angle, VIKING_SHIP_PTS, color);
+      // Dragon head bump
+      c.beginPath(); c.arc(bx + Math.cos(angle) * 7, by + Math.sin(angle) * 7, 2, 0, TWO_PI);
+      c.fillStyle = '#E0E0E0'; c.fill();
+      break;
+    case 'warrior':
+      drawRotatedPoly(c, bx, by, angle, WARRIOR_PTS, color);
+      // Headdress fan
+      c.beginPath();
+      c.arc(bx - Math.cos(angle) * 2, by - Math.sin(angle) * 2, 5, angle - 1.2, angle + 1.2);
+      c.strokeStyle = color; c.lineWidth = 1; c.stroke();
+      break;
+    case 'immortal':
+      drawRotatedPoly(c, bx, by, angle, IMMORTAL_PTS, color);
+      // Shield circle
+      c.beginPath(); c.arc(bx, by, 2, 0, TWO_PI);
+      c.fillStyle = '#FFD700'; c.fill();
+      break;
+    case 'janissary':
+      drawRotatedPoly(c, bx, by, angle, JANISSARY_PTS, color);
+      // Tall hat
+      const hx = bx - Math.sin(angle) * 4, hy = by + Math.cos(angle) * 4;
+      c.beginPath(); c.moveTo(hx, hy); c.lineTo(hx - Math.sin(angle) * 4, hy + Math.cos(angle) * 4);
+      c.strokeStyle = '#00BCD4'; c.lineWidth = 1.5; c.stroke();
+      break;
+    case 'han_soldier':
+      drawRotatedPoly(c, bx, by, angle, HAN_SOLDIER_PTS, color);
+      // Banner on back
+      const bkx = bx - Math.cos(angle) * 5, bky = by - Math.sin(angle) * 5;
+      c.beginPath(); c.moveTo(bkx, bky);
+      c.lineTo(bkx - Math.sin(angle) * 5, bky + Math.cos(angle) * 5);
+      c.strokeStyle = '#FDD835'; c.lineWidth = 1; c.stroke();
+      break;
     default: drawRotatedPoly(c, bx, by, angle, TROOP_PTS, color); break;
   }
 }
@@ -555,7 +735,10 @@ interface Props {
   onSendFleet: (fromId: number, toId: number) => void;
   onSendFleetFromAll: (toId: number) => void;
   onClearAll: () => void;
+  onDoubleTapSelectAll: () => void;
+  onToggleMultiSelect: (id: number) => void;
   selectedPlanetId: number | null;
+  selectedPlanetIds: Set<number>;
   allSelected: boolean;
   pointerPos: { x: number; y: number };
   onPointerMove: (x: number, y: number) => void;
@@ -566,7 +749,8 @@ interface Props {
 export default function GameCanvas({
   width, height,
   onSelectPlanet, onSendFleet, onSendFleetFromAll, onClearAll,
-  selectedPlanetId, allSelected, pointerPos, onPointerMove,
+  onDoubleTapSelectAll, onToggleMultiSelect,
+  selectedPlanetId, selectedPlanetIds, allSelected, pointerPos, onPointerMove,
   playerEmpire, aiEmpire,
 }: Props) {
   const { state } = useGame();
@@ -602,11 +786,18 @@ export default function GameCanvas({
   const pEmpRef = useRef(playerEmpire); pEmpRef.current = playerEmpire;
   const aEmpRef = useRef(aiEmpire); aEmpRef.current = aiEmpire;
 
+  // Multi-select refs
+  const selIdsRef = useRef(selectedPlanetIds); selIdsRef.current = selectedPlanetIds;
+  // Double tap tracking
+  const lastTapRef = useRef({ time: 0, x: 0, y: 0 });
+
   // Callback refs
   const selectRef = useRef(onSelectPlanet); selectRef.current = onSelectPlanet;
   const sendRef = useRef(onSendFleet); sendRef.current = onSendFleet;
   const sendAllRef = useRef(onSendFleetFromAll); sendAllRef.current = onSendFleetFromAll;
   const clearAllRef = useRef(onClearAll); clearAllRef.current = onClearAll;
+  const dblTapRef = useRef(onDoubleTapSelectAll); dblTapRef.current = onDoubleTapSelectAll;
+  const toggleMultiRef = useRef(onToggleMultiSelect); toggleMultiRef.current = onToggleMultiSelect;
   const moveRef = useRef(onPointerMove); moveRef.current = onPointerMove;
 
   // Color helpers
@@ -652,13 +843,33 @@ export default function GameCanvas({
       onPanResponderGrant: e => {
         const { locationX: x, locationY: y } = e.nativeEvent;
         moveRef.current(x, y);
-        // ALL mode: dispatch from all owned nodes on tap
-        if (allSelRef.current) {
+
+        // ── DOUBLE TAP DETECTION ──
+        const now = performance.now();
+        const lt = lastTapRef.current;
+        const dtap = now - lt.time;
+        const ddist = Math.sqrt((x - lt.x) ** 2 + (y - lt.y) ** 2);
+        if (dtap < 300 && ddist < 40) {
+          // Double tap — select all owned nodes
+          dblTapRef.current();
+          lastTapRef.current = { time: 0, x: 0, y: 0 };
+          if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate([15, 10, 15]);
+          return;
+        }
+        lastTapRef.current = { time: now, x, y };
+
+        // ALL mode or multi-select dispatch
+        if (allSelRef.current || selIdsRef.current.size > 0) {
           const target = getPlanetAt(x, y);
           if (target) {
+            // If target is owned, toggle multi-select
+            if (target.owner === 1 && selIdsRef.current.size > 0 && !allSelRef.current) {
+              toggleMultiRef.current(target.id);
+              return;
+            }
             sendAllRef.current(target.id);
             clearAllRef.current();
-            allDispatchedRef.current = true; // prevent double dispatch in release
+            allDispatchedRef.current = true;
           }
           return;
         }
@@ -669,10 +880,12 @@ export default function GameCanvas({
           // Nothing selected — select own planet
           if (planet?.owner === 1) selectRef.current(planet.id);
         } else {
-          // Already have a selection — tap on a different planet sends fleet
-          if (planet && planet.id !== selId) {
+          // Already have a selection — tap on another owned node adds to multi-select
+          if (planet && planet.owner === 1 && planet.id !== selId) {
+            toggleMultiRef.current(planet.id);
+          } else if (planet && planet.id !== selId) {
+            // Tap on enemy/neutral: send fleet
             sendRef.current(selId, planet.id);
-            // Chain-select if we tapped our own planet, otherwise deselect
             selectRef.current(planet.owner === 1 ? planet.id : null);
           }
           // Tapping same planet or empty space is handled in release
@@ -1347,6 +1560,18 @@ export default function GameCanvas({
           ctx.fillText(outcomeText, badgeX, badgeY + 15);
         }
       }
+      // Multi-select targeting lines
+      const multiIds = selIdsRef.current;
+      if (multiIds.size > 0 && showTarget && !allSel) {
+        for (let i = 0; i < planets.length; i++) {
+          const p = planets[i];
+          if (!multiIds.has(p.id)) continue;
+          ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(ptr.x, ptr.y);
+          ctx.strokeStyle = eColor(1); ctx.lineWidth = 1.8; ctx.globalAlpha = 0.5;
+          ctx.setLineDash([10, 7]); ctx.lineDashOffset = dashOffset; ctx.stroke();
+          ctx.setLineDash([]); ctx.lineDashOffset = 0; ctx.globalAlpha = 1;
+        }
+      }
       if (allSel && showTarget) {
         // Multi-select: stagger ring appearance by 50ms per node (cascade)
         let nodeIdx = 0;
@@ -1395,7 +1620,7 @@ export default function GameCanvas({
         nodeScaleCache.current.set(p.id, currentScale);
         const r = baseR * currentScale;
 
-        const isSel = p.id === selId || (allSel && p.owner === 1);
+        const isSel = p.id === selId || (allSel && p.owner === 1) || selIdsRef.current.has(p.id);
 
         // Impact shake (enhanced: close battle = stronger shake)
         let px = p.x, py = p.y;
@@ -1541,6 +1766,11 @@ export default function GameCanvas({
         else if (shape === 'yurt') drawYurt(ctx, px, py, r, color, accent);
         else if (shape === 'sphinx') drawSphinx(ctx, px, py, r, color, accent);
         else if (shape === 'torii') drawTorii(ctx, px, py, r, color, accent);
+        else if (shape === 'longhouse') drawLonghouse(ctx, px, py, r, color, accent);
+        else if (shape === 'step_pyramid') drawStepPyramid(ctx, px, py, r, color, accent);
+        else if (shape === 'palace') drawPalace(ctx, px, py, r, color, accent);
+        else if (shape === 'mosque') drawMosque(ctx, px, py, r, color, accent);
+        else if (shape === 'pagoda') drawPagoda(ctx, px, py, r, color, accent);
         else drawCastle(ctx, px, py, r, color, accent);
         ctx.globalAlpha = 1;
 
@@ -1794,6 +2024,26 @@ export default function GameCanvas({
             // Cherry blossom petals / crimson slash
             ctx.beginPath(); ctx.arc(tp.x + (Math.random() - 0.5) * 4, tp.y + (Math.random() - 0.5) * 4, 2 - t * 0.5, 0, TWO_PI);
             ctx.fillStyle = `rgba(255,182,193,${(trailOp * 0.7).toFixed(2)})`; ctx.fill();
+          } else if (unitShape === 'viking_ship') {
+            // Frost crystals
+            ctx.beginPath(); ctx.arc(tp.x + (Math.random() - 0.5) * 3, tp.y + (Math.random() - 0.5) * 3, 2 - t * 0.5, 0, TWO_PI);
+            ctx.fillStyle = `rgba(79,195,247,${trailOp.toFixed(2)})`; ctx.fill();
+          } else if (unitShape === 'warrior') {
+            // Jade green + red embers
+            ctx.beginPath(); ctx.arc(tp.x, tp.y, 2.5 - t * 0.6, 0, TWO_PI);
+            ctx.fillStyle = `rgba(76,175,80,${trailOp.toFixed(2)})`; ctx.fill();
+          } else if (unitShape === 'immortal') {
+            // Purple royal smoke
+            ctx.beginPath(); ctx.arc(tp.x, tp.y, 3 - t, 0, TWO_PI);
+            ctx.fillStyle = `rgba(123,31,162,${(trailOp * 0.6).toFixed(2)})`; ctx.fill();
+          } else if (unitShape === 'janissary') {
+            // Crimson + turquoise sparks
+            ctx.beginPath(); ctx.arc(tp.x, tp.y, 2 - t * 0.5, 0, TWO_PI);
+            ctx.fillStyle = `rgba(183,28,28,${trailOp.toFixed(2)})`; ctx.fill();
+          } else if (unitShape === 'han_soldier') {
+            // Yellow imperial sparks + red ribbon
+            ctx.beginPath(); ctx.arc(tp.x, tp.y, 2 - t * 0.5, 0, TWO_PI);
+            ctx.fillStyle = `rgba(253,216,53,${trailOp.toFixed(2)})`; ctx.fill();
           } else {
             ctx.beginPath(); ctx.arc(tp.x, tp.y, 4 - t * 1.2, 0, TWO_PI);
             ctx.fillStyle = glow + `${trailOp.toFixed(2)})`; ctx.fill();

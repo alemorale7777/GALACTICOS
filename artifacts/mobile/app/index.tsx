@@ -54,6 +54,7 @@ function GameView({ onMenu, onChangeEmpire, onGameEnd, playerEmpire, aiEmpire }:
   const sound = useSoundEngine();
 
   const [selectedPlanetId, setSelectedPlanetId] = useState<number | null>(null);
+  const [selectedPlanetIds, setSelectedPlanetIds] = useState<Set<number>>(new Set());
   const [allSelected, setAllSelected] = useState(false);
   const [pointerPos, setPointerPos] = useState({ x: 0, y: 0 });
   const lastPointerUpdateRef = useRef(0);
@@ -94,9 +95,42 @@ function GameView({ onMenu, onChangeEmpire, onGameEnd, playerEmpire, aiEmpire }:
   }, [sendFleet, sound]);
 
   const handleSendFleetFromAll = useCallback((toId: number) => {
+    // If multi-select active, send from selected nodes
+    if (selectedPlanetIds.size > 0) {
+      let delay = 0;
+      selectedPlanetIds.forEach(fromId => {
+        setTimeout(() => sendFleet(fromId, toId), delay);
+        delay += 40; // 40ms stagger
+      });
+      setSelectedPlanetIds(new Set());
+      setSelectedPlanetId(null);
+      sound.sfxDispatch();
+      return;
+    }
     sendFleetFromAll(toId);
     sound.sfxDispatch();
-  }, [sendFleetFromAll, sound]);
+  }, [sendFleetFromAll, sendFleet, sound, selectedPlanetIds]);
+
+  const handleDoubleTapSelectAll = useCallback(() => {
+    setAllSelected(true);
+    setSelectedPlanetId(null);
+    setSelectedPlanetIds(new Set());
+  }, []);
+
+  const handleToggleMultiSelect = useCallback((id: number) => {
+    setSelectedPlanetIds(prev => {
+      const next = new Set(prev);
+      // Also include current single selection
+      if (selectedPlanetId !== null && !next.has(selectedPlanetId)) {
+        next.add(selectedPlanetId);
+      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      if (next.size > 0) setSelectedPlanetId(null);
+      return next;
+    });
+    setAllSelected(false);
+  }, [selectedPlanetId]);
 
   // Conquest combo
   useEffect(() => {
@@ -192,7 +226,7 @@ function GameView({ onMenu, onChangeEmpire, onGameEnd, playerEmpire, aiEmpire }:
     abilityUsedRef.current = false;
     comboDataRef.current = { count: 0, lastTime: 0 };
     setComboLabel(''); setTauntText('');
-    setSelectedPlanetId(null); setAllSelected(false);
+    setSelectedPlanetId(null); setSelectedPlanetIds(new Set()); setAllSelected(false);
     resetGame(state.difficulty, playAreaSize.width, playAreaSize.height);
   }, [resetGame, state.difficulty, playAreaSize]);
 
@@ -218,10 +252,12 @@ function GameView({ onMenu, onChangeEmpire, onGameEnd, playerEmpire, aiEmpire }:
         handleLayout(width, height);
       }}>
         <GameCanvas width={playAreaSize.width} height={playAreaSize.height}
-          onSelectPlanet={id => { setSelectedPlanetId(id); if (id !== null) setAllSelected(false); }}
+          onSelectPlanet={id => { setSelectedPlanetId(id); if (id !== null) { setAllSelected(false); setSelectedPlanetIds(new Set()); } }}
           onSendFleet={handleSendFleet} onSendFleetFromAll={handleSendFleetFromAll}
-          onClearAll={() => setAllSelected(false)}
-          selectedPlanetId={selectedPlanetId} allSelected={allSelected}
+          onClearAll={() => { setAllSelected(false); setSelectedPlanetIds(new Set()); }}
+          onDoubleTapSelectAll={handleDoubleTapSelectAll}
+          onToggleMultiSelect={handleToggleMultiSelect}
+          selectedPlanetId={selectedPlanetId} selectedPlanetIds={selectedPlanetIds} allSelected={allSelected}
           pointerPos={pointerPos} onPointerMove={(x, y) => {
             const now = Date.now();
             if (now - lastPointerUpdateRef.current < 33) return; // throttle to ~30/s
