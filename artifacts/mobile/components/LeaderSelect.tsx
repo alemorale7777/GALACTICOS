@@ -528,8 +528,8 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_500Medium',
   },
   headerTitle: {
-    fontSize: 38, fontFamily: 'Inter_700Bold',
-    color: '#FFF5D6', letterSpacing: 6,
+    fontSize: 24, fontFamily: 'Inter_700Bold',
+    color: '#FFF5D6', letterSpacing: 5,
   },
   headerAccent: {
     width: 52, height: 2, borderRadius: 1,

@@ -244,11 +244,11 @@ const titleStyles = StyleSheet.create({
     }),
     fontWeight: '900',
     color: '#FFD700',
-    letterSpacing: 8,
-    textShadowColor: 'rgba(255,215,0,0.9)',
+    letterSpacing: 12,
+    textShadowColor: 'rgba(255,215,0,1.0)',
     textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 20,
-    marginHorizontal: 1,
+    textShadowRadius: 25,
+    marginHorizontal: 0,
   } as any,
   shimmer: {
     position: 'absolute',
@@ -260,10 +260,10 @@ const titleStyles = StyleSheet.create({
   } as any,
   subtitle: {
     fontSize: 13,
-    letterSpacing: 6,
-    color: 'rgba(255,215,0,0.6)',
+    letterSpacing: 7,
+    color: 'rgba(255,215,0,0.55)',
     fontFamily: 'Inter_500Medium',
-    marginTop: 12,
+    marginTop: 18,
   },
 });
 
@@ -346,12 +346,12 @@ function PlayButton({ onPress }: { onPress: () => void }) {
 const playStyles = StyleSheet.create({
   btn: {
     width: '100%',
-    maxWidth: 300,
-    height: 56,
+    maxWidth: 310,
+    height: 58,
     borderRadius: 14,
-    backgroundColor: '#B8942D',
+    backgroundColor: '#C8A84B',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderColor: 'rgba(255,255,255,0.30)',
     justifyContent: 'center',
     alignItems: 'center',
     alignSelf: 'center',
@@ -361,7 +361,7 @@ const playStyles = StyleSheet.create({
     // Glow via shadow
     ...Platform.select({
       web: {
-        boxShadow: '0px 4px 15px rgba(255,215,0,0.4), 0px 0px 30px rgba(255,165,0,0.3), 0px 0px 60px rgba(255,100,0,0.15)',
+        boxShadow: '0px 2px 0px rgba(0,0,0,0.4), 0px 4px 20px rgba(255,165,0,0.50), 0px 0px 40px rgba(255,140,0,0.30), 0px 0px 70px rgba(255,100,0,0.15)',
       } as any,
       default: {
         shadowColor: '#FFD700',
@@ -397,10 +397,10 @@ const playStyles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   text: {
-    fontSize: 18,
+    fontSize: 19,
     fontFamily: 'Inter_700Bold',
-    color: '#1A0F00',
-    letterSpacing: 3,
+    color: '#120A00',
+    letterSpacing: 4,
   },
 });
 
@@ -584,7 +584,7 @@ export default function StartScreen({
           <Feather name="settings" size={20} color="rgba(255,215,0,0.35)" />
         </TouchableOpacity>
       </View>
-      <Text style={styles.versionText}>v1.0.0 — © 2026 THRAXON</Text>
+      <Text style={styles.versionText}>v1.0.0 · thraxon.app</Text>
 
       {/* ── Stats Modal ── */}
       <Modal visible={showStats} transparent animationType="fade">
@@ -700,8 +700,9 @@ const styles = StyleSheet.create({
   rankSection: { alignItems: 'center', gap: 4, paddingVertical: 4, width: '100%' },
   rankName: { fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 3 },
   rankBarOuter: {
-    width: 200, height: 6, borderRadius: 3,
-    backgroundColor: 'rgba(255,215,0,0.1)', overflow: 'hidden',
+    width: 180, height: 5, borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.10)', overflow: 'hidden',
+    borderWidth: 0.5, borderColor: 'rgba(255,215,0,0.25)',
   },
   rankBarFill: {
     height: '100%', borderRadius: 3,
@@ -735,17 +736,18 @@ const styles = StyleSheet.create({
   modesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between' },
   modeBtn: {
     width: '100%',
-    height: 52,
-    flexDirection: 'row',
+    height: 56,
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 3,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.055)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,215,0,0.20)',
   },
   modeBtnText: {
-    fontSize: 12, fontFamily: 'Inter_700Bold', color: 'rgba(255,255,255,0.85)', letterSpacing: 1,
+    fontSize: 11, fontFamily: 'Inter_700Bold', color: 'rgba(255,255,255,0.82)', letterSpacing: 1,
   },
 
   /* ── Bottom Row ── */
@@ -784,9 +786,9 @@ const styles = StyleSheet.create({
 
   /* ── Version Text ── */
   versionText: {
-    fontSize: 8, color: 'rgba(255,215,0,0.15)',
+    fontSize: 8, color: 'rgba(255,255,255,0.15)',
     fontFamily: 'Inter_400Regular', letterSpacing: 1.5,
-    textAlign: 'center', marginTop: 2,
+    textAlign: 'center', marginTop: 4,
   },
 
   /* ── Settings Modal ── */
