@@ -17,9 +17,9 @@ import ReplayScreen from '@/components/ReplayScreen';
 import LocalMultiplayerSetup from '@/components/LocalMultiplayerSetup';
 
 import { Colors } from '@/constants/colors';
-import { EmpireConfig, EmpireId, MapSize, EMPIRE_CONFIG, randomEmpireExcluding } from '@/constants/empires';
+import { EmpireConfig, EmpireId, GameMode, MapSize, EMPIRE_CONFIG, randomEmpireExcluding } from '@/constants/empires';
 import { CAMPAIGNS } from '@/hooks/useCampaign';
-import { Difficulty, FleetPercent, GameProvider, useGame } from '@/context/GameContext';
+import { Difficulty, FleetPercent, GameProvider, useGame, GamePhase } from '@/context/GameContext';
 import { useGameStorage } from '@/hooks/useGameStorage';
 import { useRankedSeason } from '@/hooks/useRankedSeason';
 import { useDailyChallenges } from '@/hooks/useDailyChallenges';
@@ -40,6 +40,7 @@ interface GameViewProps {
   onGameEnd: (won: boolean, elapsedMs: number, nodesCaptures: number, abilityUsed: boolean) => void;
   playerEmpire: EmpireConfig | null;
   aiEmpire: EmpireConfig | null;
+  gameMode: GameMode;
 }
 
 const COMBO_LABELS = ['', 'CONQUISTA!', 'DOUBLE RAID!', 'TRIPLE STRIKE!', 'UNSTOPPABLE!', 'GODLIKE!'];
@@ -48,7 +49,7 @@ const AI_TAUNTS = [
   'Resistance is futile!', 'Your kingdom falls!', 'None can stop my advance!',
 ];
 
-function GameView({ onMenu, onChangeEmpire, onGameEnd, playerEmpire, aiEmpire }: GameViewProps) {
+function GameView({ onMenu, onChangeEmpire, onGameEnd, playerEmpire, aiEmpire, gameMode }: GameViewProps) {
   const { state, sendFleet, sendFleetFromAll, useAbility, resetGame, setFleetPercent, setDimensions } = useGame();
   const { stats, recordWin, recordLoss } = useGameStorage();
   const sound = useSoundEngine();
@@ -245,7 +246,8 @@ function GameView({ onMenu, onChangeEmpire, onGameEnd, playerEmpire, aiEmpire }:
       <TopHUD playerPlanets={playerPlanets} enemyPlanets={enemyPlanets}
         totalPlanets={state.planets.length} difficulty={state.difficulty}
         elapsedMs={elapsedMs} onReset={handleReset}
-        abilityActive={state.abilityActive} playerEmpire={playerEmpire} aiEmpire={aiEmpire} />
+        abilityActive={state.abilityActive} playerEmpire={playerEmpire} aiEmpire={aiEmpire}
+        gameMode={gameMode} />
 
       <View style={styles.playArea} onLayout={e => {
         const { width, height } = e.nativeEvent.layout;
@@ -302,13 +304,14 @@ function GameView({ onMenu, onChangeEmpire, onGameEnd, playerEmpire, aiEmpire }:
       <GameOverlay phase={state.phase} onReset={handleReset} onMenu={handleMenu}
         onChangeEmpire={handleChangeEmpire} elapsedMs={elapsedMs}
         stats={stats} prevBestTimeMs={prevBestRef.current}
-        playerEmpire={playerEmpire} nodesCaptures={state.playerConquestTotal} />
+        playerEmpire={playerEmpire} nodesCaptures={state.playerConquestTotal}
+        gameMode={gameMode} />
     </View>
   );
 }
 
 // ─── Root app shell ────────────────────────────────────────────────────────
-type GameMode = 'quickplay' | 'campaign' | 'tournament' | 'localmulti';
+type AppGameMode = 'quickplay' | 'campaign' | 'tournament' | 'localmulti';
 
 export default function GameApp() {
   const [screen, setScreen] = useState<AppScreen>('start');
@@ -317,7 +320,8 @@ export default function GameApp() {
   const [playerEmpire, setPlayerEmpire] = useState<EmpireConfig | null>(null);
   const [aiEmpire, setAiEmpire] = useState<EmpireConfig | null>(null);
   const [gameKey, setGameKey] = useState(0);
-  const [gameMode, setGameMode] = useState<GameMode>('quickplay');
+  const [appGameMode, setAppGameMode] = useState<AppGameMode>('quickplay');
+  const [regicideMode, setRegicideMode] = useState<GameMode>('conquest');
   const [campaignMapIdx, setCampaignMapIdx] = useState<number>(0);
   const [campaignEmpireId, setCampaignEmpireId] = useState<EmpireId>('egypt');
 
@@ -331,7 +335,7 @@ export default function GameApp() {
   const tournament = useTournament();
   const clanSystem = useClanSystem();
 
-  const goToGame = (mode: GameMode = 'quickplay') => { setGameMode(mode); setGameKey(k => k + 1); setScreen('game'); };
+  const goToGame = (mode: AppGameMode = 'quickplay') => { setAppGameMode(mode); setGameKey(k => k + 1); setScreen('game'); };
   const goToMenu = () => setScreen('start');
 
   const handleStart = (d: Difficulty) => {
@@ -349,8 +353,9 @@ export default function GameApp() {
     setScreen('mapsize');
   };
 
-  const handleSelectMapSize = (size: MapSize) => {
+  const handleSelectMapSize = (size: MapSize, gm: GameMode = 'conquest') => {
     setMapSize(size);
+    setRegicideMode(gm);
     if (!tutorialSeen) { setScreen('tutorial'); }
     else { goToGame('quickplay'); replays.startRecording(); }
   };
@@ -404,15 +409,15 @@ export default function GameApp() {
     // ── MODE-SPECIFIC RESULTS ──
 
     // Campaign: record map completion
-    if (gameMode === 'campaign') {
+    if (appGameMode === 'campaign') {
       await campaign.completeMap(campaignEmpireId, campaignMapIdx, won, elapsedMs, abilityUsed);
     }
 
     // Tournament: resolve match
-    if (gameMode === 'tournament') {
+    if (appGameMode === 'tournament') {
       await tournament.resolveMatch(won, nodesCaptures);
     }
-  }, [playerEmpire, aiEmpire, mapSize, gameMode, campaignEmpireId, campaignMapIdx,
+  }, [playerEmpire, aiEmpire, mapSize, appGameMode, campaignEmpireId, campaignMapIdx,
       ranked, dailies, worldMap, clanSystem, replays, sound, campaign, tournament]);
 
   const handleShareReplay = useCallback((replay: any) => {
@@ -439,6 +444,8 @@ export default function GameApp() {
     setAiEmpire(EMPIRE_CONFIG[aiComp.empire]);
     setDifficulty('medium');
     setMapSize('medium');
+    // Semifinals (round 1) and Finals (round 2) use Regicide
+    setRegicideMode(match.round >= 1 ? 'regicide' : 'conquest');
     goToGame('tournament');
   }, [tournament]);
 
@@ -545,6 +552,8 @@ export default function GameApp() {
             setAiEmpire(EMPIRE_CONFIG[randomEmpireExcluding(empireId)]);
             setDifficulty(map.difficulty < 0.4 ? 'easy' : map.difficulty < 0.7 ? 'medium' : 'hard');
             setMapSize(map.nodeCount <= 10 ? 'small' : map.nodeCount <= 16 ? 'medium' : 'large');
+            // Campaign maps 8-12 (index 7-11) use Regicide
+            setRegicideMode(mapIdx >= 7 ? 'regicide' : 'conquest');
             goToGame('campaign');
           }}
           onBack={goToMenu}
@@ -612,12 +621,13 @@ export default function GameApp() {
   // Game screen
   return (
     <GameProvider
-      key={`${difficulty}-${mapSize}-${gameKey}`}
+      key={`${difficulty}-${mapSize}-${gameKey}-${regicideMode}`}
       initialDifficulty={difficulty}
       mapSize={mapSize}
       playerEmpireId={playerEmpire?.id ?? null}
       aiEmpireId={aiEmpire?.id ?? null}
       playerStreak={stats.streak}
+      gameMode={regicideMode}
     >
       <GameView
         onMenu={goToMenu}
@@ -625,6 +635,7 @@ export default function GameApp() {
         onGameEnd={handleGameEnd}
         playerEmpire={playerEmpire}
         aiEmpire={aiEmpire}
+        gameMode={regicideMode}
       />
     </GameProvider>
   );

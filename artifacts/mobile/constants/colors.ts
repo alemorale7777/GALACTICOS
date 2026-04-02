@@ -13,8 +13,8 @@ export const Colors = {
   enemyPlanetGlow: 'rgba(238,51,68,0.4)',
   enemyFleet: '#EE3344',
 
-  neutralPlanet: '#BB9955',      // Neutral — parchment/stone
-  neutralPlanetGlow: 'rgba(187,153,85,0.25)',
+  neutralPlanet: '#8D6E63',      // Neutral — warm brown
+  neutralPlanetGlow: 'rgba(141,110,99,0.25)',
 
   // ── Targeting / lines ────────────────────────────────────────────────────
   lineColor: '#FFCC22',          // Gold targeting line

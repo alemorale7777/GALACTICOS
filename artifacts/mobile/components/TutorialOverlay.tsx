@@ -20,7 +20,7 @@ const STEPS = [
   {
     icon: 'shield' as const,
     title: 'Your Castles',
-    body: 'Your castles train soldiers over time. The number shows your garrison. Capital castles (crown icon) are extra powerful — lose yours and you lose instantly!',
+    body: 'Your castles train soldiers over time. The number shows your garrison. Capital castles (crown icon) generate units faster and are strategically valuable.',
     color: Colors.playerPlanet,
   },
   {
@@ -44,7 +44,7 @@ const STEPS = [
   {
     icon: 'flag' as const,
     title: 'Claim the Realm',
-    body: 'Capture the enemy Capital for instant victory, or eliminate all enemy castles. Choose your map size — larger maps have fog of war hiding distant strongholds. Watchtower nodes reveal more area.',
+    body: 'In Conquest mode, capture all enemy castles to win. In Regicide mode, capture the enemy King for instant victory! Larger maps have fog of war — Watchtower nodes reveal more area.',
     color: '#FFD700',
   },
 ];

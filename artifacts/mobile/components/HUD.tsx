@@ -13,7 +13,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '@/constants/colors';
 import { Difficulty, FleetPercent } from '@/context/GameContext';
-import { EmpireConfig } from '@/constants/empires';
+import { EmpireConfig, GameMode } from '@/constants/empires';
 
 const CD_R = 17;
 const CD_CIRCUM = 2 * Math.PI * CD_R;
@@ -36,9 +36,10 @@ interface TopHUDProps {
   abilityActive?: boolean;
   playerEmpire?: EmpireConfig | null;
   aiEmpire?: EmpireConfig | null;
+  gameMode?: GameMode;
 }
 
-export function TopHUD({ playerPlanets, enemyPlanets, totalPlanets, difficulty, elapsedMs, onReset, abilityActive, playerEmpire, aiEmpire }: TopHUDProps) {
+export function TopHUD({ playerPlanets, enemyPlanets, totalPlanets, difficulty, elapsedMs, onReset, abilityActive, playerEmpire, aiEmpire, gameMode = 'conquest' }: TopHUDProps) {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const diffColor =
@@ -122,6 +123,11 @@ export function TopHUD({ playerPlanets, enemyPlanets, totalPlanets, difficulty, 
           <View style={[styles.diffBadge, { borderColor: diffColor + '66', backgroundColor: diffColor + '1A' }]}>
             <Text style={[styles.diffText, { color: diffColor }]}>{diffLabel}</Text>
           </View>
+          {gameMode === 'regicide' && (
+            <View style={[styles.diffBadge, { borderColor: '#EE334466', backgroundColor: '#EE33441A' }]}>
+              <Text style={[styles.diffText, { color: '#EE3344' }]}>👑 REGICIDE</Text>
+            </View>
+          )}
         </View>
         {/* Territory bar */}
         <View style={styles.bar}>
@@ -459,7 +465,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.1)',
   },
   barPlayer: { height: '100%', borderRadius: 4 },
-  barNeutral: { height: '100%', backgroundColor: 'rgba(187,153,85,0.15)' },
+  barNeutral: { height: '100%', backgroundColor: 'rgba(141,110,99,0.15)' },
   barEnemy: { height: '100%', borderRadius: 4 },
   barLabels: { flexDirection: 'row', width: '100%', justifyContent: 'space-between', paddingHorizontal: 2 },
   barLabel: { fontSize: 8, fontFamily: 'Inter_600SemiBold', letterSpacing: 0.5 },

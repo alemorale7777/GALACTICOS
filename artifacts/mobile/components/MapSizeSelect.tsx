@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Platform,
@@ -10,10 +10,10 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { MapSize, MAP_SIZE_CONFIG } from '@/constants/empires';
+import { GameMode, MapSize, MAP_SIZE_CONFIG } from '@/constants/empires';
 
 interface Props {
-  onSelect: (size: MapSize) => void;
+  onSelect: (size: MapSize, gameMode: GameMode) => void;
 }
 
 const MAP_SIZES: { key: MapSize; icon: any; color: string }[] = [
@@ -27,9 +27,14 @@ export default function MapSizeSelect({ onSelect }: Props) {
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : insets.bottom;
 
+  const [gameMode, setGameMode] = useState<GameMode>('conquest');
+
   const headerAnim = useRef(new Animated.Value(0)).current;
   const cardAnims = useRef(MAP_SIZES.map(() => new Animated.Value(0))).current;
   const scales = useRef(MAP_SIZES.map(() => new Animated.Value(1))).current;
+  const modeAnim = useRef(new Animated.Value(0)).current;
+  const conquestScale = useRef(new Animated.Value(1)).current;
+  const regicideScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     Animated.timing(headerAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
@@ -38,6 +43,9 @@ export default function MapSizeSelect({ onSelect }: Props) {
         toValue: 1, duration: 420, delay: 260 + i * 130, useNativeDriver: true,
       }).start();
     });
+    Animated.timing(modeAnim, {
+      toValue: 1, duration: 420, delay: 650, useNativeDriver: true,
+    }).start();
   }, []);
 
   const handlePress = (key: MapSize, idx: number) => {
@@ -45,8 +53,20 @@ export default function MapSizeSelect({ onSelect }: Props) {
     Animated.sequence([
       Animated.timing(scales[idx], { toValue: 0.95, duration: 80, useNativeDriver: true }),
       Animated.timing(scales[idx], { toValue: 1, duration: 80, useNativeDriver: true }),
-    ]).start(() => onSelect(key));
+    ]).start(() => onSelect(key, gameMode));
   };
+
+  const handleModeSelect = (mode: GameMode) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setGameMode(mode);
+    const scaleRef = mode === 'conquest' ? conquestScale : regicideScale;
+    Animated.sequence([
+      Animated.timing(scaleRef, { toValue: 0.93, duration: 60, useNativeDriver: true }),
+      Animated.spring(scaleRef, { toValue: 1, tension: 300, friction: 8, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const isConquest = gameMode === 'conquest';
 
   return (
     <View style={[styles.root, { paddingTop: topInset + 10, paddingBottom: bottomInset + 10 }]}>
@@ -99,6 +119,54 @@ export default function MapSizeSelect({ onSelect }: Props) {
           );
         })}
       </View>
+
+      {/* ── Game Mode Toggle ── */}
+      <Animated.View style={[styles.modeSection, {
+        opacity: modeAnim,
+        transform: [{ translateY: modeAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
+      }]}>
+        <Text style={styles.modeSectionLabel}>GAME MODE</Text>
+        <View style={styles.modeRow}>
+          <Animated.View style={{ flex: 1, transform: [{ scale: conquestScale }] }}>
+            <TouchableOpacity
+              style={[
+                styles.modeCard,
+                isConquest && styles.modeCardActive,
+                isConquest && { borderColor: '#EEAA22' },
+              ]}
+              onPress={() => handleModeSelect('conquest')}
+              activeOpacity={0.8}>
+              <View style={styles.modeIconRow}>
+                <Feather name="flag" size={20} color={isConquest ? '#EEAA22' : 'rgba(255,220,140,0.3)'} />
+              </View>
+              <Text style={[styles.modeTitle, isConquest && { color: '#EEAA22' }]}>CONQUEST</Text>
+              <Text style={styles.modeDesc}>Capture all enemy nodes to claim victory</Text>
+            </TouchableOpacity>
+          </Animated.View>
+
+          <Animated.View style={{ flex: 1, transform: [{ scale: regicideScale }] }}>
+            <TouchableOpacity
+              style={[
+                styles.modeCard,
+                !isConquest && styles.modeCardActive,
+                !isConquest && { borderColor: '#EE3344' },
+              ]}
+              onPress={() => handleModeSelect('regicide')}
+              activeOpacity={0.8}>
+              <View style={styles.modeIconRow}>
+                <Text style={{ fontSize: 18 }}>👑</Text>
+                {!isConquest && (
+                  <View style={styles.intenseBadge}>
+                    <Text style={styles.intenseText}>INTENSE</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[styles.modeTitle, !isConquest && { color: '#EE3344' }]}>REGICIDE</Text>
+              <Text style={styles.modeDesc}>Strike down the enemy King for instant victory</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
+      </Animated.View>
     </View>
   );
 }
@@ -154,4 +222,66 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6, borderWidth: 1,
   },
   defaultText: { fontSize: 7, fontFamily: 'Inter_700Bold', letterSpacing: 1 },
+
+  // ── Game Mode ──
+  modeSection: {
+    marginTop: 20,
+    gap: 8,
+  },
+  modeSectionLabel: {
+    fontSize: 9, letterSpacing: 3,
+    color: 'rgba(255,200,60,0.4)',
+    fontFamily: 'Inter_600SemiBold',
+    textAlign: 'center',
+  },
+  modeRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  modeCard: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    gap: 6,
+  },
+  modeCardActive: {
+    backgroundColor: 'rgba(255,220,80,0.06)',
+    borderWidth: 1.5,
+  },
+  modeIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  modeTitle: {
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 2,
+    color: 'rgba(255,220,140,0.35)',
+  },
+  modeDesc: {
+    fontSize: 10,
+    color: 'rgba(255,220,140,0.3)',
+    fontFamily: 'Inter_400Regular',
+    textAlign: 'center',
+    lineHeight: 14,
+  },
+  intenseBadge: {
+    backgroundColor: 'rgba(238,51,68,0.2)',
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderWidth: 1,
+    borderColor: 'rgba(238,51,68,0.4)',
+  },
+  intenseText: {
+    fontSize: 7,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1,
+    color: '#EE3344',
+  },
 });

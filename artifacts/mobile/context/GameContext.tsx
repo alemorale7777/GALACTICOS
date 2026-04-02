@@ -6,7 +6,7 @@ import React, {
   useReducer,
   useRef,
 } from 'react';
-import { EmpireId, MapSize, EMPIRE_CONFIG, MAP_SIZE_CONFIG } from '@/constants/empires';
+import { EmpireId, GameMode, MapSize, EMPIRE_CONFIG, MAP_SIZE_CONFIG } from '@/constants/empires';
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
 export type GamePhase = 'playing' | 'won' | 'lost';
@@ -128,6 +128,7 @@ export interface GameState {
   fogEnabled: boolean;
   mirageOffsets: Record<number, number>;
   playerStreak: number; // win streak bonus
+  gameMode: GameMode;
   // Performance tracking
   _frameCount: number;
   _fps: number;
@@ -318,6 +319,7 @@ function createState(
   mapSize: MapSize = 'medium',
   playerEmpireId: EmpireId | null = null,
   aiEmpireId: EmpireId | null = null,
+  gameMode: GameMode = 'conquest',
 ): GameState {
   const pool = initParticlePool();
   return {
@@ -347,6 +349,7 @@ function createState(
     fogEnabled: mapSize === 'large',
     mirageOffsets: {},
     playerStreak: 0,
+    gameMode,
     _frameCount: 0,
     _fps: 60,
     _lastFpsTime: Date.now(),
@@ -867,7 +870,7 @@ function tick(state: GameState, dt: number): void {
     if (targetAfter && targetBefore) {
       const attackColor = fleet.owner === 1 ? '68,238,102' : '238,51,68';
       const defColor =
-        targetBefore.owner === 0 ? '187,153,85'
+        targetBefore.owner === 0 ? '141,110,99'
         : targetBefore.owner === 1 ? '68,238,102'
         : '238,51,68';
 
@@ -1011,19 +1014,21 @@ function tick(state: GameState, dt: number): void {
   const playerFleets = state.fleets.filter(f => f.owner === 1).length;
   const enemyFleets = state.fleets.filter(f => f.owner === 2).length;
 
-  // Capital sudden death
-  const playerCapital = state.planets.find(p => p.id === 0);
-  const aiCapital = state.planets.find(p => p.id === 1);
+  // Capital sudden death — only in Regicide mode
+  if (state.gameMode === 'regicide') {
+    const playerCapital = state.planets.find(p => p.id === 0);
+    const aiCapital = state.planets.find(p => p.id === 1);
 
-  if (playerCapital && playerCapital.owner === 2) {
-    state.phase = 'lost';
-    state.gameEndTime = Date.now();
-    return;
-  }
-  if (aiCapital && aiCapital.owner === 1) {
-    state.phase = 'won';
-    state.gameEndTime = Date.now();
-    return;
+    if (playerCapital && playerCapital.owner === 2) {
+      state.phase = 'lost';
+      state.gameEndTime = Date.now();
+      return;
+    }
+    if (aiCapital && aiCapital.owner === 1) {
+      state.phase = 'won';
+      state.gameEndTime = Date.now();
+      return;
+    }
   }
 
   // Standard elimination check
@@ -1058,6 +1063,7 @@ interface GameProviderProps {
   playerEmpireId?: EmpireId | null;
   aiEmpireId?: EmpireId | null;
   playerStreak?: number;
+  gameMode?: GameMode;
 }
 
 export function GameProvider({
@@ -1069,8 +1075,9 @@ export function GameProvider({
   playerEmpireId = null,
   aiEmpireId = null,
   playerStreak = 0,
+  gameMode = 'conquest',
 }: GameProviderProps) {
-  const initState = createState(initialDifficulty, playWidth, playHeight, mapSize, playerEmpireId, aiEmpireId);
+  const initState = createState(initialDifficulty, playWidth, playHeight, mapSize, playerEmpireId, aiEmpireId, gameMode);
   initState.playerStreak = playerStreak;
   const gameRef = useRef<GameState>(
     initState
@@ -1193,6 +1200,7 @@ export function GameProvider({
       gameRef.current.mapSize,
       gameRef.current.playerEmpireId,
       gameRef.current.aiEmpireId,
+      gameRef.current.gameMode,
     );
     if (useW !== 375 || useH !== 600) {
       dimensionsSetRef.current = true;

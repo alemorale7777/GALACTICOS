@@ -12,7 +12,7 @@ import * as Haptics from 'expo-haptics';
 import { GamePhase } from '@/context/GameContext';
 import { Colors } from '@/constants/colors';
 import { GameStats } from '@/hooks/useGameStorage';
-import { EmpireConfig } from '@/constants/empires';
+import { EmpireConfig, GameMode } from '@/constants/empires';
 
 interface Props {
   phase: GamePhase;
@@ -24,6 +24,7 @@ interface Props {
   prevBestTimeMs: number | null;
   playerEmpire?: EmpireConfig | null;
   nodesCaptures?: number;
+  gameMode?: GameMode;
 }
 
 function formatTime(ms: number): string {
@@ -68,7 +69,7 @@ const jitterOffsets = Array.from({ length: JITTER_FRAMES }, () => ({
 
 export default function GameOverlay({
   phase, onReset, onMenu, onChangeEmpire, elapsedMs, stats, prevBestTimeMs,
-  playerEmpire, nodesCaptures,
+  playerEmpire, nodesCaptures, gameMode = 'conquest',
 }: Props) {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(40)).current;
@@ -353,7 +354,9 @@ export default function GameOverlay({
                   color: '#666666',
                 },
           ]}>
-            {isWin ? 'VICTORY' : 'DEFEATED'}
+            {isWin
+              ? (gameMode === 'regicide' ? 'REGICIDE!' : 'CONQUEST COMPLETE')
+              : (gameMode === 'regicide' ? 'YOUR KING HAS FALLEN' : 'CONQUERED')}
           </Text>
         </Animated.View>
 
@@ -362,8 +365,8 @@ export default function GameOverlay({
           !isWin && { color: 'rgba(150,150,150,0.5)' },
         ]}>
           {isWin
-            ? `${empireName} conquers all!`
-            : 'Your castle has fallen.'}
+            ? (gameMode === 'regicide' ? `The enemy King falls to ${empireName}!` : `${empireName} conquers all!`)
+            : (gameMode === 'regicide' ? 'Your King has been struck down.' : 'Your empire has fallen.')}
         </Text>
 
         {isWin && (

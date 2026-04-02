@@ -804,22 +804,22 @@ export default function GameCanvas({
   const eColor = useCallback((owner: 0|1|2): string => {
     if (owner === 1) return pEmpRef.current?.nodeColor ?? '#44EE66';
     if (owner === 2) return aEmpRef.current?.nodeColor ?? '#EE3344';
-    return '#8B7355'; // Neutral: muted tan
+    return '#8D6E63'; // Neutral: warm brown
   }, []);
   const eGlow = useCallback((owner: 0|1|2): string => {
     if (owner === 1) return pEmpRef.current?.glowRgb ? `rgba(${pEmpRef.current.glowRgb},` : 'rgba(68,238,102,';
     if (owner === 2) return aEmpRef.current?.glowRgb ? `rgba(${aEmpRef.current.glowRgb},` : 'rgba(238,51,68,';
-    return 'rgba(139,115,85,';
+    return 'rgba(141,110,99,';
   }, []);
   const eAccent = useCallback((owner: 0|1|2): string => {
     if (owner === 1) return pEmpRef.current?.accentColor ?? '#228844';
     if (owner === 2) return aEmpRef.current?.accentColor ?? '#882222';
-    return '#665544';
+    return '#6D4C41';
   }, []);
   const eUnitColor = useCallback((owner: 0|1|2): string => {
     if (owner === 1) return pEmpRef.current?.unitColor ?? '#44EE66';
     if (owner === 2) return aEmpRef.current?.unitColor ?? '#EE3344';
-    return '#8B7355';
+    return '#8D6E63';
   }, []);
   const eShape = useCallback((owner: 0|1|2): NodeShape | null => {
     if (owner === 1) return pEmpRef.current?.nodeShape ?? null;
@@ -1672,7 +1672,7 @@ export default function GameCanvas({
             const haloOp = enemyHidden ? '0.1)' : '0.18)';
             haloGrad.addColorStop(0, glow + haloOp); haloGrad.addColorStop(1, glow + '0)');
           } else {
-            haloGrad.addColorStop(0, 'rgba(139,115,85,0.05)'); haloGrad.addColorStop(1, 'rgba(139,115,85,0)');
+            haloGrad.addColorStop(0, 'rgba(141,110,99,0.05)'); haloGrad.addColorStop(1, 'rgba(141,110,99,0)');
           }
           ctx.fillStyle = haloGrad; ctx.beginPath(); ctx.arc(px, py, haloR, 0, TWO_PI); ctx.fill();
         }
