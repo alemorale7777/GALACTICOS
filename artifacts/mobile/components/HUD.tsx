@@ -33,13 +33,14 @@ interface TopHUDProps {
   difficulty: Difficulty;
   elapsedMs: number;
   onReset: () => void;
+  onQuit?: () => void;
   abilityActive?: boolean;
   playerEmpire?: EmpireConfig | null;
   aiEmpire?: EmpireConfig | null;
   gameMode?: GameMode;
 }
 
-export function TopHUD({ playerPlanets, enemyPlanets, totalPlanets, difficulty, elapsedMs, onReset, abilityActive, playerEmpire, aiEmpire, gameMode = 'conquest' }: TopHUDProps) {
+export function TopHUD({ playerPlanets, enemyPlanets, totalPlanets, difficulty, elapsedMs, onReset, onQuit, abilityActive, playerEmpire, aiEmpire, gameMode = 'conquest' }: TopHUDProps) {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const diffColor =
@@ -155,11 +156,20 @@ export function TopHUD({ playerPlanets, enemyPlanets, totalPlanets, difficulty, 
         <View style={[styles.ownerDot, { backgroundColor: enemyColor }]} />
       </View>
 
-      <TouchableOpacity style={styles.resetBtn}
-        onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onReset(); }}
-        activeOpacity={0.7} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-        <Feather name="refresh-cw" size={14} color="rgba(255,220,120,0.3)" />
-      </TouchableOpacity>
+      <View style={styles.topBtnGroup}>
+        {onQuit && (
+          <TouchableOpacity style={styles.resetBtn}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onQuit(); }}
+            activeOpacity={0.7} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Feather name="log-out" size={14} color="rgba(255,220,120,0.3)" />
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity style={styles.resetBtn}
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onReset(); }}
+          activeOpacity={0.7} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Feather name="refresh-cw" size={14} color="rgba(255,220,120,0.3)" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -469,6 +479,7 @@ const styles = StyleSheet.create({
   barEnemy: { height: '100%', borderRadius: 4 },
   barLabels: { flexDirection: 'row', width: '100%', justifyContent: 'space-between', paddingHorizontal: 2 },
   barLabel: { fontSize: 8, fontFamily: 'Inter_600SemiBold', letterSpacing: 0.5 },
+  topBtnGroup: { flexDirection: 'row', gap: 4 },
   resetBtn: { padding: 6 },
   abilityActiveBadge: {
     paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8, borderWidth: 1, marginTop: 2,

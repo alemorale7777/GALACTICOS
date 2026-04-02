@@ -246,7 +246,7 @@ function GameView({ onMenu, onChangeEmpire, onGameEnd, playerEmpire, aiEmpire, g
       <StarField />
       <TopHUD playerPlanets={playerPlanets} enemyPlanets={enemyPlanets}
         totalPlanets={state.planets.length} difficulty={state.difficulty}
-        elapsedMs={elapsedMs} onReset={handleReset}
+        elapsedMs={elapsedMs} onReset={handleReset} onQuit={handleMenu}
         abilityActive={state.abilityActive} playerEmpire={playerEmpire} aiEmpire={aiEmpire}
         gameMode={gameMode} />
 
@@ -530,6 +530,7 @@ export default function GameApp() {
         <StarField />
         <LeaderSelect
           onSelect={handleSelectEmpire}
+          onBack={goToMenu}
           empireMastery={ranked.data.empireMastery}
           empireXP={ranked.data.empireXP}
         />
@@ -541,7 +542,7 @@ export default function GameApp() {
     return (
       <View style={styles.root}>
         <StarField />
-        <MapSizeSelect onSelect={handleSelectMapSize} />
+        <MapSizeSelect onSelect={handleSelectMapSize} onBack={() => transitionTo('leader')} />
       </View>
     );
   }

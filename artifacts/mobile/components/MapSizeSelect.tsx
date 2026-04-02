@@ -14,6 +14,7 @@ import { GameMode, MapSize, MAP_SIZE_CONFIG } from '@/constants/empires';
 
 interface Props {
   onSelect: (size: MapSize, gameMode: GameMode) => void;
+  onBack?: () => void;
 }
 
 const MAP_SIZES: { key: MapSize; icon: any; color: string; tag: string; time: string }[] = [
@@ -22,7 +23,7 @@ const MAP_SIZES: { key: MapSize; icon: any; color: string; tag: string; time: st
   { key: 'large',  icon: 'shield',     color: '#EE5544', tag: 'EPIC BATTLE', time: '~12 min' },
 ];
 
-export default function MapSizeSelect({ onSelect }: Props) {
+export default function MapSizeSelect({ onSelect, onBack }: Props) {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : insets.bottom;
@@ -70,6 +71,13 @@ export default function MapSizeSelect({ onSelect }: Props) {
 
   return (
     <View style={[styles.root, { paddingTop: topInset + 10, paddingBottom: bottomInset + 10 }]}>
+      {onBack && (
+        <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.7}>
+          <Feather name="chevron-left" size={18} color="rgba(255,255,255,0.7)" />
+          <Text style={styles.backBtnText}>BACK</Text>
+        </TouchableOpacity>
+      )}
+
       <Animated.View style={[styles.header, {
         opacity: headerAnim,
         transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] }) }],
@@ -304,5 +312,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     letterSpacing: 1,
     color: '#EE3344',
+  },
+  backBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.4)', alignSelf: 'flex-start',
+  },
+  backBtnText: {
+    fontSize: 13, fontFamily: 'Inter_600SemiBold', color: 'rgba(255,255,255,0.7)', letterSpacing: 1,
   },
 });

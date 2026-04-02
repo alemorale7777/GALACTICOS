@@ -268,9 +268,48 @@ function generatePlanets(w: number, h: number, mapSize: MapSize): Planet[] {
     ...Array(largeCount).fill({ rMin: 27, rMax: 31, uMin: 16, uMax: 24 }),
   ];
 
+  // For large maps (24 nodes): use grid-based placement to guarantee distribution
+  // This avoids the random placement degradation that caused Domination to fail
+  const gridPositions: { x: number; y: number }[] = [];
+  if (mapSize === 'large' && neutralCount > 16) {
+    const cols = 5, rows = Math.ceil(neutralCount / cols);
+    const cellW = (w - margin * 2) / cols;
+    const cellH = (h - margin * 2) / rows;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (gridPositions.length >= neutralCount) break;
+        const bx = margin + c * cellW + cellW / 2;
+        const by = margin + r * cellH + cellH / 2;
+        // Add organic offset (±30% of cell size)
+        const ox = (Math.random() - 0.5) * cellW * 0.55;
+        const oy = (Math.random() - 0.5) * cellH * 0.55;
+        const gx = Math.max(margin, Math.min(w - margin, bx + ox));
+        const gy = Math.max(margin, Math.min(h - margin, by + oy));
+        // Check not too close to capitals
+        if (dist(gx, gy, positions[0].x, positions[0].y) > 50 &&
+            dist(gx, gy, positions[1].x, positions[1].y) > 50) {
+          gridPositions.push({ x: gx, y: gy });
+        } else {
+          // Retry with less offset
+          gridPositions.push({ x: bx, y: by });
+        }
+      }
+    }
+    // Shuffle so node types aren't grid-ordered
+    for (let i = gridPositions.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [gridPositions[i], gridPositions[j]] = [gridPositions[j], gridPositions[i]];
+    }
+  }
+
   for (let i = 0; i < neutralCount; i++) {
     const tier = tiers[i] || tiers[tiers.length - 1];
-    const pos = place(margin, w - margin, margin, h - margin);
+    const pos = gridPositions.length > 0 && i < gridPositions.length
+      ? gridPositions[i]
+      : place(margin, w - margin, margin, h - margin);
+    if (gridPositions.length > 0 && i < gridPositions.length) {
+      positions.push(pos); // Track for capital distance checks
+    }
     const radius = tier.rMin + Math.random() * (tier.rMax - tier.rMin);
     let units = tier.uMin + Math.floor(Math.random() * (tier.uMax - tier.uMin));
     const nt = nodeTypes[i];

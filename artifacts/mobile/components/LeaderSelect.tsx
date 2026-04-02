@@ -10,11 +10,13 @@ import {
 } from 'react-native';
 import Svg, { Circle, Ellipse, G, Line, Path, Polygon, Rect } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { EmpireConfig, EmpireId, EMPIRE_CONFIG, EMPIRE_IDS } from '@/constants/empires';
 
 interface Props {
   onSelect: (empireId: EmpireId) => void;
+  onBack?: () => void;
   empireMastery?: Record<EmpireId, number>;
   empireXP?: Record<EmpireId, number>;
 }
@@ -453,7 +455,7 @@ function LeaderCard({
 }
 
 // ── Main screen ───────────────────────────────────────────────────────────────
-export default function LeaderSelect({ onSelect, empireMastery }: Props) {
+export default function LeaderSelect({ onSelect, onBack, empireMastery }: Props) {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : insets.bottom;
@@ -472,6 +474,14 @@ export default function LeaderSelect({ onSelect, empireMastery }: Props) {
 
   return (
     <View style={[styles.root, { paddingTop: topInset, paddingBottom: bottomInset }]}>
+      {/* Back button */}
+      {onBack && (
+        <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.7}>
+          <Feather name="chevron-left" size={18} color="rgba(255,255,255,0.7)" />
+          <Text style={styles.backText}>BACK</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Header */}
       <Animated.View style={[styles.header, {
         opacity: headerAnim,
@@ -592,5 +602,13 @@ const styles = StyleSheet.create({
   },
   playstyleText: {
     fontSize: 7, fontFamily: 'Inter_700Bold', letterSpacing: 1.5,
+  },
+  backBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.4)', alignSelf: 'flex-start',
+  },
+  backText: {
+    fontSize: 13, fontFamily: 'Inter_600SemiBold', color: 'rgba(255,255,255,0.7)', letterSpacing: 1,
   },
 });
