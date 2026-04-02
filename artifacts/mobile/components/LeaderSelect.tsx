@@ -374,6 +374,11 @@ const EMPIRE_PLAYSTYLE: Record<EmpireId, string> = {
   vikings: 'BERSERKER', aztec: 'SACRIFICE', persian: 'ENDURANCE', ottoman: 'CONTROL', han: 'FORTIFY',
 };
 
+const EMPIRE_CARD_BG: Record<EmpireId, string> = {
+  egypt: '#0A1929', rome: '#1A0505', mongols: '#1A0D00', ptolemaic: '#001A1A', japan: '#1A0020',
+  vikings: '#091929', aztec: '#021A0A', persian: '#120820', ottoman: '#1A0510', han: '#1A1400',
+};
+
 // ── Leader card ───────────────────────────────────────────────────────────────
 function LeaderCard({
   empire,
@@ -407,36 +412,44 @@ function LeaderCard({
         ],
       },
     ]}>
+      {/* Card background tint */}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: EMPIRE_CARD_BG[empire.id], borderRadius: 16 }]} />
       <View style={[styles.cardColorBar, { backgroundColor: empire.cardAccent }]} />
 
-      {/* Emblem */}
+      {/* Glass highlight */}
+      <View style={styles.glassHighlight} />
+
+      {/* LVL badge */}
+      {masteryLevel !== undefined && masteryLevel > 0 && (
+        <View style={[styles.lvlBadge, { backgroundColor: empire.cardAccent }]}>
+          <Text style={styles.lvlText}>LVL {masteryLevel}</Text>
+        </View>
+      )}
+
+      {/* Emblem with glow */}
       <View style={[styles.emblemWrap, { backgroundColor: empire.cardAccent + '18' }]}>
-        {EMBLEM_RENDERERS[empire.id](72, empire.cardAccent)}
+        {EMBLEM_RENDERERS[empire.id](64, empire.cardAccent)}
       </View>
 
-      {/* Names */}
+      {/* Empire & Leader */}
       <Text style={[styles.empireName, { color: empire.cardAccent }]} numberOfLines={1}>
         {empire.empire.toUpperCase()}
       </Text>
       <Text style={styles.leaderName} numberOfLines={1}>{empire.leader}</Text>
 
-      {/* Mastery level */}
-      {masteryLevel !== undefined && masteryLevel > 1 && (
-        <View style={styles.masteryRow}>
-          <Text style={[styles.masteryLvl, { color: empire.cardAccent }]}>Lv {masteryLevel}</Text>
-          {masteryLevel >= 5 && <Text style={styles.masteryStar}>{'\u2605'}</Text>}
-          {masteryLevel >= 10 && <Text style={styles.masteryStar}>{'\u2605'}</Text>}
-          {masteryLevel >= 25 && <Text style={styles.masteryStar}>{'\u2605'}</Text>}
-          {masteryLevel >= 50 && <Text style={[styles.masteryStar, { color: '#FF2D55' }]}>{'\u2605'}</Text>}
-        </View>
-      )}
+      {/* Divider */}
+      <View style={styles.cardDivider} />
+
+      {/* Ability */}
+      <Text style={styles.abilityName} numberOfLines={1}>{empire.ability.name}</Text>
+      <Text style={styles.abilityDesc} numberOfLines={2}>{empire.ability.description}</Text>
 
       {/* Difficulty & Playstyle */}
       <View style={styles.metaRow}>
         <Text style={styles.diffStars}>
           {'\u2605'.repeat(EMPIRE_DIFFICULTY[empire.id])}{'\u2606'.repeat(5 - EMPIRE_DIFFICULTY[empire.id])}
         </Text>
-        <View style={[styles.playstyleBadge, { borderColor: empire.cardAccent + '55' }]}>
+        <View style={[styles.playstyleBadge, { borderColor: empire.cardAccent + '55', backgroundColor: empire.cardAccent + '22' }]}>
           <Text style={[styles.playstyleText, { color: empire.cardAccent }]}>
             {EMPIRE_PLAYSTYLE[empire.id]}
           </Text>
@@ -551,17 +564,18 @@ const styles = StyleSheet.create({
     width: '47%',
     backgroundColor: 'rgba(255,255,255,0.04)',
     borderRadius: 16, borderWidth: 1.5,
-    paddingVertical: 16, paddingHorizontal: 12,
-    alignItems: 'center', gap: 8,
+    paddingVertical: 14, paddingHorizontal: 10,
+    alignItems: 'center', gap: 5,
     overflow: 'hidden',
+    minHeight: 220,
   },
   cardColorBar: {
     position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, opacity: 0.9,
   },
   emblemWrap: {
-    width: 80, height: 80, borderRadius: 40,
+    width: 68, height: 68, borderRadius: 34,
     justifyContent: 'center', alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 2,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
   },
   empireName: {
@@ -603,6 +617,18 @@ const styles = StyleSheet.create({
   playstyleText: {
     fontSize: 7, fontFamily: 'Inter_700Bold', letterSpacing: 1.5,
   },
+  glassHighlight: {
+    position: 'absolute', top: 0, left: 0, width: '45%', height: '35%',
+    backgroundColor: 'rgba(255,255,255,0.04)', borderTopLeftRadius: 16,
+  },
+  lvlBadge: {
+    position: 'absolute', top: 8, right: 8, zIndex: 2,
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+  },
+  lvlText: { fontSize: 8, fontFamily: 'Inter_700Bold', color: '#FFF', letterSpacing: 0.5 },
+  cardDivider: { width: '80%', height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginVertical: 2 },
+  abilityName: { fontSize: 10, fontFamily: 'Inter_600SemiBold', color: 'rgba(255,215,0,0.65)', fontStyle: 'italic' },
+  abilityDesc: { fontSize: 9, fontFamily: 'Inter_400Regular', color: 'rgba(255,255,255,0.42)', textAlign: 'center', lineHeight: 13 },
   backBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,

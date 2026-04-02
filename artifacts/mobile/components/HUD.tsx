@@ -16,6 +16,10 @@ import { Difficulty, FleetPercent } from '@/context/GameContext';
 import { EmpireConfig, GameMode } from '@/constants/empires';
 
 const CD_R = 17;
+const EMPIRE_ABILITY_ICON: Record<string, string> = {
+  egypt: '☀', rome: '🛡', mongols: '⚡', ptolemaic: '👁', japan: '⚔',
+  vikings: '❄', aztec: '💀', persian: '🔮', ottoman: '🌙', han: '🏯',
+};
 const CD_CIRCUM = 2 * Math.PI * CD_R;
 
 const PCT_OPTIONS: FleetPercent[] = [25, 50, 75];
@@ -407,7 +411,7 @@ export function BottomHUD({ abilityCooldown, abilityMaxCooldown, fleetPercent, o
                     strokeLinecap="round" opacity={0.9} />
                 </Svg>
               )}
-              <Feather name="zap" size={18} color={isReady ? '#1A0C00' : 'rgba(255,200,80,0.28)'} />
+              <Text style={{ fontSize: 18 }}>{EMPIRE_ABILITY_ICON[playerEmpire?.id ?? ''] || '⚡'}</Text>
             </View>
 
             <Text style={[styles.abilityText, !isReady && styles.abilityTextOff]}>

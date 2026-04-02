@@ -347,9 +347,9 @@ export default function GameOverlay({
             isWin
               ? {
                   color: '#FFD700',
-                  textShadowColor: 'rgba(255,215,0,0.6)',
+                  textShadowColor: 'rgba(255,215,0,0.9)',
                   textShadowOffset: { width: 0, height: 0 },
-                  textShadowRadius: 20,
+                  textShadowRadius: 30,
                 }
               : {
                   color: '#666666',

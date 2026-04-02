@@ -1668,12 +1668,18 @@ export default function GameCanvas({
 
         // ── ENHANCED NODE GLOW SYSTEM ──
         if (p.owner !== 0 && !enemyHidden) {
-          const glowRings = degraded ? 1 : 3;
           const glowBreath = 0.5 + 0.5 * Math.sin(now / 1400 + p.id * 0.72);
+          // Radial fill glow behind node
+          const fillGlow = ctx.createRadialGradient(px, py, r * 0.3, px, py, r + 16);
+          fillGlow.addColorStop(0, glow + (0.18 * (0.7 + 0.3 * glowBreath)).toFixed(3) + ')');
+          fillGlow.addColorStop(1, glow + '0)');
+          ctx.fillStyle = fillGlow; ctx.beginPath(); ctx.arc(px, py, r + 16, 0, TWO_PI); ctx.fill();
+          // Glow rings
+          const glowRings = degraded ? 1 : 3;
           for (let gr = 0; gr < glowRings; gr++) {
-            const ringOffset = (gr + 1) * 4; // 4, 8, 12
-            const ringOp = [0.25, 0.15, 0.08][gr] * (0.7 + 0.3 * glowBreath);
-            const ringStroke = [1.5, 1.0, 0.5][gr];
+            const ringOffset = (gr + 1) * 5;
+            const ringOp = [0.32, 0.18, 0.10][gr] * (0.7 + 0.3 * glowBreath);
+            const ringStroke = [2.0, 1.2, 0.6][gr];
             ctx.beginPath();
             ctx.arc(px, py, r + ringOffset, 0, TWO_PI);
             ctx.strokeStyle = glow + ringOp.toFixed(3) + ')';

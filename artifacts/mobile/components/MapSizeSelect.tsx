@@ -187,6 +187,13 @@ export default function MapSizeSelect({ onSelect, onBack }: Props) {
           </Animated.View>
         </View>
       </Animated.View>
+
+      {/* Mode description */}
+      <Text style={styles.modeDescription}>
+        {gameMode === 'conquest'
+          ? 'Capture all enemy territory to claim victory'
+          : 'Strike down the enemy King for instant victory'}
+      </Text>
     </View>
   );
 }
@@ -320,5 +327,9 @@ const styles = StyleSheet.create({
   },
   backBtnText: {
     fontSize: 13, fontFamily: 'Inter_600SemiBold', color: 'rgba(255,255,255,0.7)', letterSpacing: 1,
+  },
+  modeDescription: {
+    fontSize: 12, fontFamily: 'Inter_400Regular', fontStyle: 'italic',
+    color: 'rgba(255,255,255,0.40)', textAlign: 'center', marginTop: 4, paddingHorizontal: 16,
   },
 });
