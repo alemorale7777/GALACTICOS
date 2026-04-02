@@ -58,8 +58,8 @@ function GameView({ onMenu, onChangeEmpire, onGameEnd, playerEmpire, aiEmpire, g
   const [selectedPlanetId, setSelectedPlanetId] = useState<number | null>(null);
   const [selectedPlanetIds, setSelectedPlanetIds] = useState<Set<number>>(new Set());
   const [allSelected, setAllSelected] = useState(false);
-  const [pointerPos, setPointerPos] = useState({ x: 0, y: 0 });
-  const lastPointerUpdateRef = useRef(0);
+  const pointerPosRef = useRef({ x: 0, y: 0 });
+  const pointerPos = pointerPosRef.current;
   const [playAreaSize, setPlayAreaSize] = useState({ width: 375, height: 500 });
   const [comboLabel, setComboLabel] = useState('');
   const [tauntText, setTauntText] = useState('');
@@ -262,10 +262,7 @@ function GameView({ onMenu, onChangeEmpire, onGameEnd, playerEmpire, aiEmpire, g
           onToggleMultiSelect={handleToggleMultiSelect}
           selectedPlanetId={selectedPlanetId} selectedPlanetIds={selectedPlanetIds} allSelected={allSelected}
           pointerPos={pointerPos} onPointerMove={(x, y) => {
-            const now = Date.now();
-            if (now - lastPointerUpdateRef.current < 33) return; // throttle to ~30/s
-            lastPointerUpdateRef.current = now;
-            setPointerPos({ x, y });
+            pointerPosRef.current = { x, y };
           }}
           playerEmpire={playerEmpire} aiEmpire={aiEmpire} />
 

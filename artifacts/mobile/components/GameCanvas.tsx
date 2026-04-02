@@ -860,12 +860,16 @@ export default function GameCanvas({
         }
         lastTapRef.current = { time: now, x, y };
 
-        // ALL mode or multi-select dispatch
-        if (allSelRef.current || selIdsRef.current.size > 0) {
+        // ALL mode: defer all dispatch to release (supports drag-to-target)
+        if (allSelRef.current) {
+          allDispatchedRef.current = false;
+          return;
+        }
+        // Multi-select dispatch
+        if (selIdsRef.current.size > 0) {
           const target = getPlanetAt(x, y);
           if (target) {
-            // If target is owned, toggle multi-select
-            if (target.owner === 1 && selIdsRef.current.size > 0 && !allSelRef.current) {
+            if (target.owner === 1) {
               toggleMultiRef.current(target.id);
               return;
             }
@@ -896,14 +900,19 @@ export default function GameCanvas({
       onPanResponderMove: e => moveRef.current(e.nativeEvent.locationX, e.nativeEvent.locationY),
       onPanResponderRelease: e => {
         const { locationX: x, locationY: y } = e.nativeEvent;
-        // ALL mode: also handle release (for drag-to-target flow)
+        // ALL mode: dispatch on release (supports both tap and drag-to-target)
         if (allSelRef.current) {
           if (!allDispatchedRef.current) {
             const target = getPlanetAt(x, y);
-            if (target) {
+            if (target && target.owner !== 1) {
+              // Release on enemy/neutral: dispatch from all nodes
               sendAllRef.current(target.id);
               clearAllRef.current();
+            } else if (!target) {
+              // Release on empty space: deselect all
+              clearAllRef.current();
             }
+            // Release on own node: keep selection (allow retry drag)
           }
           allDispatchedRef.current = false;
           return;
