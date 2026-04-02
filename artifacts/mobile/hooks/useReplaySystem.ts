@@ -22,7 +22,7 @@ export interface ReplayMeta {
   events: ReplayEvent[];
 }
 
-const STORAGE_KEY = '@galacticos_replays';
+const STORAGE_KEY = '@thraxon_replays';
 const MAX_REPLAYS = 5;
 
 export function useReplaySystem() {
@@ -107,7 +107,7 @@ export function useReplaySystem() {
     const secs = Math.floor((replay.durationMs % 60000) / 1000);
     const result = replay.won ? 'conquered' : 'fell in';
     const empireName = replay.empire.charAt(0).toUpperCase() + replay.empire.slice(1);
-    return `I ${result} ${replay.nodesCaptures} nodes as ${empireName} in ${mins}:${String(secs).padStart(2, '0')}! Play GALACTICOS`;
+    return `I ${result} ${replay.nodesCaptures} nodes as ${empireName} in ${mins}:${String(secs).padStart(2, '0')}! Play THRAXON`;
   }, []);
 
   return {

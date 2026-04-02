@@ -1,6 +1,6 @@
 kind = "mobile"
 previewPath = "/"
-title = "Galácticos"
+title = "THRAXON"
 version = "1.0.0"
 id = "artifacts/mobile"
 router = "expo-domain"

@@ -79,7 +79,7 @@ export interface RankedData {
   bestTime: number | null;
 }
 
-const STORAGE_KEY = '@galacticos_ranked';
+const STORAGE_KEY = '@thraxon_ranked';
 const SEASON_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 const DEFAULT_DATA: RankedData = {

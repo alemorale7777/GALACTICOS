@@ -140,7 +140,7 @@ export default function StartScreen({
         transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
       }]}>
         <View style={styles.titleWrap}>
-          <Text style={styles.title}>GALACTICOS</Text>
+          <Text style={styles.title}>THRAXON</Text>
           <Animated.View
             style={[styles.scanLine, { transform: [{ translateX: scanTranslate }] }, { pointerEvents: 'none' } as any]}
           />

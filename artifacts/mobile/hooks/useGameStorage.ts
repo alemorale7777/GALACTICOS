@@ -8,7 +8,7 @@ export interface GameStats {
   streak: number;
 }
 
-const STORAGE_KEY = '@galacticos_stats';
+const STORAGE_KEY = '@thraxon_stats';
 
 const DEFAULT_STATS: GameStats = {
   wins: 0,
@@ -27,7 +27,7 @@ export function useGameStorage() {
       try {
         const [statsRaw, tutRaw] = await Promise.all([
           AsyncStorage.getItem(STORAGE_KEY),
-          AsyncStorage.getItem('@galacticos_tutorial'),
+          AsyncStorage.getItem('@thraxon_tutorial'),
         ]);
         if (statsRaw) setStats(JSON.parse(statsRaw));
         setTutorialSeenState(tutRaw === 'true');
@@ -65,7 +65,7 @@ export function useGameStorage() {
 
   const markTutorialSeen = useCallback(async () => {
     setTutorialSeenState(true);
-    await AsyncStorage.setItem('@galacticos_tutorial', 'true').catch(() => {});
+    await AsyncStorage.setItem('@thraxon_tutorial', 'true').catch(() => {});
   }, []);
 
   return { stats, tutorialSeen, loaded, recordWin, recordLoss, markTutorialSeen };

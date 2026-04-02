@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useState } from 'react';
 import { EmpireId } from '@/constants/empires';
 
-const STORAGE_KEY = '@galacticos_worldmap';
+const STORAGE_KEY = '@thraxon_worldmap';
 const TERRITORY_COUNT = 50;
 const MONTHLY_RESET_MS = 30 * 24 * 60 * 60 * 1000;
 

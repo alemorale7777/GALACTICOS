@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useState } from 'react';
 
-const STORAGE_KEY = '@galacticos_clan';
+const STORAGE_KEY = '@thraxon_clan';
 
 export interface ClanData {
   name: string;

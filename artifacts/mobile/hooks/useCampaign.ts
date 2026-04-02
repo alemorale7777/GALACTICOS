@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useState } from 'react';
 import { EmpireId } from '@/constants/empires';
 
-const STORAGE_KEY = '@galacticos_campaign';
+const STORAGE_KEY = '@thraxon_campaign';
 
 export interface CampaignMap {
   id: number;

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(npx expo:*)",
+      "Read(//c/Users/Jems4/AppData/Local/Temp/claude/C--Users-Jems4-CascadeProjects-GALACTICOS-artifacts-mobile/d6c3a148-bc4d-4158-b173-cadb10a2fae2/tasks/**)",
+      "Bash(wc -l components/*.tsx)",
+      "Bash(git:*)"
+    ]
+  }
+}

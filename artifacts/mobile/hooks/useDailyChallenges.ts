@@ -44,7 +44,7 @@ const CHALLENGE_POOL: ChallengeTemplate[] = [
   { type: 'win_streak', description: 'Win 3 games in a row', xpReward: 400, masteryReward: 0, target: 3 },
 ];
 
-const STORAGE_KEY = '@galacticos_dailies';
+const STORAGE_KEY = '@thraxon_dailies';
 
 interface DailyChallengeData {
   date: string; // YYYY-MM-DD

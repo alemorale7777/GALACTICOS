@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useState } from 'react';
 import { EmpireId, EMPIRE_IDS } from '@/constants/empires';
 
-const STORAGE_KEY = '@galacticos_tournament';
+const STORAGE_KEY = '@thraxon_tournament';
 
 export interface TournamentCompetitor {
   name: string;

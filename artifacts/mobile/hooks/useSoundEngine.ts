@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 
-const STORAGE_KEY = '@galacticos_sound';
+const STORAGE_KEY = '@thraxon_sound';
 
 interface SoundSettings {
   enabled: boolean;

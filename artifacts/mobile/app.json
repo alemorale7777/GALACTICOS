@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Galácticos",
-    "slug": "mobile",
+    "name": "THRAXON",
+    "slug": "thraxon",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobile",
+    "scheme": "thraxon",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "backgroundColor": "#000010",
@@ -20,8 +20,8 @@
     "android": {},
     "web": {
       "favicon": "./assets/images/icon.png",
-      "name": "GALACTICOS",
-      "shortName": "GALACTICOS",
+      "name": "THRAXON",
+      "shortName": "THRAXON",
       "description": "Empire conquest strategy game",
       "themeColor": "#0A140A",
       "backgroundColor": "#0A140A"
