@@ -212,11 +212,17 @@ function generatePlanets(w: number, h: number, mapSize: MapSize): Planet[] {
 
   const place = (xMin: number, xMax: number, yMin: number, yMax: number) => {
     let x = 0, y = 0, attempts = 0;
+    let bestX = 0, bestY = 0, bestMinDist = 0;
     do {
       x = rng(xMin, xMax);
       y = rng(yMin, yMax);
       attempts++;
-    } while (positions.some(p => dist(p.x, p.y, x, y) < minDist) && attempts < 500);
+      // Track the best position (farthest from all others)
+      const closest = positions.length === 0 ? Infinity : Math.min(...positions.map(p => dist(p.x, p.y, x, y)));
+      if (closest > bestMinDist) { bestMinDist = closest; bestX = x; bestY = y; }
+    } while (positions.some(p => dist(p.x, p.y, x, y) < minDist) && attempts < 800);
+    // If we exhausted attempts, use the best position found
+    if (attempts >= 800) { x = bestX; y = bestY; }
     positions.push({ x, y });
     return { x, y };
   };

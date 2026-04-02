@@ -259,7 +259,7 @@ export const EMPIRE_IDS: EmpireId[] = ['egypt', 'rome', 'mongols', 'ptolemaic', 
 export const MAP_SIZE_CONFIG: Record<MapSize, { label: string; desc: string; nodeCount: number; minDist: number }> = {
   small:  { label: 'Skirmish',    desc: 'Fast games, 2-4 min',         nodeCount: 10, minDist: 120 },
   medium: { label: 'Conquest',    desc: 'Balanced gameplay, 4-8 min',  nodeCount: 16, minDist: 100 },
-  large:  { label: 'Domination',  desc: 'Epic games, 8-15 min',        nodeCount: 24, minDist: 85  },
+  large:  { label: 'Domination',  desc: 'Epic games, 8-15 min',        nodeCount: 24, minDist: 65  },
 };
 
 export function randomEmpireExcluding(exclude: EmpireId): EmpireId {

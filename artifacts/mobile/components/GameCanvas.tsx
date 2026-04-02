@@ -853,6 +853,8 @@ export default function GameCanvas({
           // Double tap — select all owned nodes
           dblTapRef.current();
           lastTapRef.current = { time: 0, x: 0, y: 0 };
+          // Prevent release handler from immediately dispatching
+          allDispatchedRef.current = true;
           if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate([15, 10, 15]);
           return;
         }
@@ -929,23 +931,28 @@ export default function GameCanvas({
   const drawBg = useCallback((c: CanvasRenderingContext2D, w: number, h: number) => {
     // Layer 1: Deep dark gradient with green-black tint
     const baseGrad = c.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.7);
-    baseGrad.addColorStop(0, '#141f14');
-    baseGrad.addColorStop(1, '#0a0f0a');
+    baseGrad.addColorStop(0, '#0f160f');
+    baseGrad.addColorStop(1, '#080c08');
     c.fillStyle = baseGrad; c.fillRect(0, 0, w, h);
 
-    // Layer 2: Terrain texture — 200 tiny dots + 15 larger
-    c.fillStyle = 'rgba(255,240,200,0.15)';
-    for (let i = 0; i < 200; i++) {
-      c.beginPath(); c.arc(Math.random() * w, Math.random() * h, 0.5, 0, TWO_PI); c.fill();
+    // Layer 2: Terrain texture — 300 tiny + 20 medium + 8 star/fire points
+    c.fillStyle = 'rgba(255,240,200,0.12)';
+    for (let i = 0; i < 300; i++) {
+      const s = 0.5 + Math.random() * 0.5;
+      c.beginPath(); c.arc(Math.random() * w, Math.random() * h, s, 0, TWO_PI); c.fill();
     }
-    c.fillStyle = 'rgba(255,240,200,0.08)';
-    for (let i = 0; i < 15; i++) {
-      c.beginPath(); c.arc(Math.random() * w, Math.random() * h, 1.2, 0, TWO_PI); c.fill();
+    c.fillStyle = 'rgba(255,240,200,0.06)';
+    for (let i = 0; i < 20; i++) {
+      c.beginPath(); c.arc(Math.random() * w, Math.random() * h, 1.5 + Math.random() * 0.5, 0, TWO_PI); c.fill();
+    }
+    c.fillStyle = 'rgba(255,220,140,0.15)';
+    for (let i = 0; i < 8; i++) {
+      c.beginPath(); c.arc(Math.random() * w, Math.random() * h, 2 + Math.random(), 0, TWO_PI); c.fill();
     }
 
-    // Layer 3: Hex grid (very subtle)
-    const hexSize = 40;
-    c.strokeStyle = 'rgba(255,255,255,0.03)'; c.lineWidth = 0.5;
+    // Layer 3: Hex grid (barely visible tactical overlay)
+    const hexSize = 45;
+    c.strokeStyle = 'rgba(255,255,255,0.025)'; c.lineWidth = 0.5;
     const hexH = hexSize * Math.sqrt(3);
     for (let row = -1; row < h / hexH + 1; row++) {
       for (let col = -1; col < w / (hexSize * 1.5) + 1; col++) {
@@ -962,9 +969,9 @@ export default function GameCanvas({
       }
     }
 
-    // Layer 4: Vignette
-    const vg = c.createRadialGradient(w / 2, h / 2, w * 0.25, w / 2, h / 2, w * 0.8);
-    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.5)');
+    // Layer 4: Vignette (elliptical, stronger)
+    const vg = c.createRadialGradient(w / 2, h / 2, w * 0.22, w / 2, h / 2, w * 0.75);
+    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.6)');
     c.fillStyle = vg; c.fillRect(0, 0, w, h);
   }, []);
 
