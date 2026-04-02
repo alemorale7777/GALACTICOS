@@ -1936,6 +1936,75 @@ export default function GameCanvas({
           }
         }
 
+        // Vikings Berserker Rage: frost crystal aura
+        if (s.abilityActive && s.playerEmpireId === 'vikings' && p.owner === 1) {
+          for (let d = 0; d < 6; d++) {
+            const a = (d / 6) * TWO_PI + now / 3000;
+            const len = r + 14 + Math.sin(now / 400 + d) * 4;
+            ctx.beginPath(); ctx.moveTo(px, py);
+            ctx.lineTo(px + Math.cos(a) * len, py + Math.sin(a) * len);
+            ctx.strokeStyle = 'rgba(128,216,255,0.55)'; ctx.lineWidth = 2; ctx.stroke();
+            // Ice branch
+            ctx.beginPath();
+            ctx.moveTo(px + Math.cos(a) * len * 0.5, py + Math.sin(a) * len * 0.5);
+            ctx.lineTo(px + Math.cos(a + 0.5) * len * 0.7, py + Math.sin(a + 0.5) * len * 0.7);
+            ctx.strokeStyle = 'rgba(128,216,255,0.3)'; ctx.lineWidth = 1; ctx.stroke();
+          }
+        }
+
+        // Aztec Blood Sacrifice: red pulse + gold generation rings
+        if (s.abilityActive && s.playerEmpireId === 'aztec' && p.owner === 1) {
+          const redPulse = Math.sin(now / 150) * 0.5 + 0.5;
+          ctx.globalAlpha = redPulse * 0.30;
+          ctx.beginPath(); ctx.arc(px, py, r + 8, 0, TWO_PI);
+          ctx.fillStyle = '#C62828'; ctx.fill(); ctx.globalAlpha = 1;
+          const ringProg = (now % 400) / 400;
+          ctx.globalAlpha = (1 - ringProg) * 0.7;
+          ctx.beginPath(); ctx.arc(px, py, ringProg * (r + 12), 0, TWO_PI);
+          ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2; ctx.stroke(); ctx.globalAlpha = 1;
+        }
+
+        // Persian Immortal Legion: rotating hexagon shield
+        if (s.abilityActive && s.playerEmpireId === 'persian' && p.owner === 1) {
+          ctx.save(); ctx.translate(px, py); ctx.rotate(now / 2000);
+          ctx.beginPath();
+          for (let h = 0; h < 6; h++) {
+            const ha = (h / 6) * TWO_PI;
+            if (h === 0) ctx.moveTo(Math.cos(ha) * (r + 10), Math.sin(ha) * (r + 10));
+            else ctx.lineTo(Math.cos(ha) * (r + 10), Math.sin(ha) * (r + 10));
+          }
+          ctx.closePath();
+          ctx.strokeStyle = 'rgba(206,147,216,0.50)'; ctx.lineWidth = 2; ctx.stroke();
+          ctx.restore();
+        }
+
+        // Ottoman Grand Bazaar: teal shimmer on neutral nodes
+        if (s.abilityActive && s.playerEmpireId === 'ottoman' && p.owner === 0) {
+          const tealShimmer = Math.sin(now / 600 + px) * 0.5 + 0.5;
+          ctx.globalAlpha = tealShimmer * 0.25;
+          ctx.beginPath(); ctx.arc(px, py, r + 8, 0, TWO_PI);
+          ctx.fillStyle = '#00BCD4'; ctx.fill(); ctx.globalAlpha = 1;
+          // Crescent above
+          const cY = py - r - 14 + Math.sin(now / 800) * 3;
+          ctx.beginPath(); ctx.arc(px, cY, 6, 0.3, Math.PI * 1.7);
+          ctx.strokeStyle = 'rgba(0,188,212,0.65)'; ctx.lineWidth = 2; ctx.stroke();
+        }
+
+        // Han Great Wall: gold wall segments + pulse ring
+        if (s.abilityActive && s.playerEmpireId === 'han' && p.owner === 1 && p.id === 0) {
+          const wallR = r + 14;
+          for (let w = 0; w < 4; w++) {
+            const wa = (w / 4) * TWO_PI + 0.4;
+            const wx = px + Math.cos(wa) * wallR, wy = py + Math.sin(wa) * wallR;
+            ctx.save(); ctx.translate(wx, wy); ctx.rotate(wa + Math.PI / 2);
+            const wallFlash = Math.sin(now / 200) * 0.3 + 0.7;
+            ctx.fillStyle = `rgba(255,235,59,${(wallFlash * 0.80).toFixed(2)})`;
+            ctx.fillRect(-10, -3, 20, 6); ctx.restore();
+          }
+          ctx.beginPath(); ctx.arc(px, py, wallR + 2, 0, TWO_PI);
+          ctx.strokeStyle = 'rgba(255,235,59,0.45)'; ctx.lineWidth = 2; ctx.stroke();
+        }
+
         // Garrison arc (hidden for enemies without intel)
         if (!enemyHidden) {
           const arcR = r + 6, arcFill = Math.min(1, p.units / 99);
