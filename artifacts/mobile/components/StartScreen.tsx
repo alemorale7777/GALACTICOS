@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  Dimensions,
   Modal,
   Platform,
   ScrollView,
@@ -20,6 +21,8 @@ import { getRankProgress } from '@/hooks/useRankedSeason';
 import { Challenge } from '@/hooks/useDailyChallenges';
 import { ClanData } from '@/hooks/useClanSystem';
 import DailyChallengesPanel from './DailyChallengesPanel';
+
+const { width: screenWidth } = Dimensions.get('window');
 
 interface Props {
   onStart: (difficulty: Difficulty) => void;
@@ -64,12 +67,344 @@ const SECONDARY_BUTTONS: { label: string; icon: any; color: string; action: keyo
   { label: 'Clans', icon: 'shield', color: '#FF5588', action: 'onClan' },
 ];
 
+const TITLE_LETTERS = ['T', 'H', 'R', 'A', 'X', 'O', 'N'];
+const TITLE_FONT_SIZE = Math.min(screenWidth * 0.18, 72);
+
 function formatBestTime(ms: number): string {
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
   return `${m}:${(s % 60).toString().padStart(2, '0')}`;
 }
 
+// ── Cinematic Title Component ───────────────────────────────────────────────
+function CinematicTitle() {
+  // Per-letter entrance animations
+  const letterAnims = useRef(TITLE_LETTERS.map(() => new Animated.Value(0))).current;
+  const letterScales = useRef(TITLE_LETTERS.map(() => new Animated.Value(0.3))).current;
+  const titlePulse = useRef(new Animated.Value(1)).current;
+  const subtitleOpacity = useRef(new Animated.Value(0)).current;
+  const subtitleBreath = useRef(new Animated.Value(0.5)).current;
+  const glowIntensity = useRef(new Animated.Value(0.8)).current;
+  const shimmerPos = useRef(new Animated.Value(-0.4)).current;
+
+  useEffect(() => {
+    // Staggered letter entrance
+    const letterAnimations = TITLE_LETTERS.map((_, i) =>
+      Animated.parallel([
+        Animated.timing(letterAnims[i], {
+          toValue: 1,
+          duration: 400,
+          delay: i * 80,
+          useNativeDriver: true,
+        }),
+        Animated.sequence([
+          Animated.timing(letterScales[i], {
+            toValue: 1.1,
+            duration: 300,
+            delay: i * 80,
+            useNativeDriver: true,
+          }),
+          Animated.timing(letterScales[i], {
+            toValue: 1.0,
+            duration: 100,
+            useNativeDriver: true,
+          }),
+        ]),
+      ])
+    );
+
+    Animated.parallel(letterAnimations).start(() => {
+      // After all letters land: pulse
+      Animated.sequence([
+        Animated.timing(titlePulse, { toValue: 1.04, duration: 150, useNativeDriver: true }),
+        Animated.timing(titlePulse, { toValue: 1.0, duration: 150, useNativeDriver: true }),
+      ]).start();
+
+      // Subtitle fade in
+      Animated.timing(subtitleOpacity, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+    });
+
+    // Continuous idle: glow pulse
+    const glowLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowIntensity, { toValue: 1.0, duration: 2000, useNativeDriver: true }),
+        Animated.timing(glowIntensity, { toValue: 0.8, duration: 2000, useNativeDriver: true }),
+      ])
+    );
+    glowLoop.start();
+
+    // Subtitle breathing
+    const breathLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(subtitleBreath, { toValue: 0.7, duration: 1500, useNativeDriver: true }),
+        Animated.timing(subtitleBreath, { toValue: 0.5, duration: 1500, useNativeDriver: true }),
+      ])
+    );
+    breathLoop.start();
+
+    // Shimmer sweep every 3 seconds
+    const shimmerLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmerPos, { toValue: 1.4, duration: 800, useNativeDriver: true }),
+        Animated.delay(2200),
+        Animated.timing(shimmerPos, { toValue: -0.4, duration: 0, useNativeDriver: true }),
+      ])
+    );
+    shimmerLoop.start();
+
+    return () => {
+      glowLoop.stop();
+      breathLoop.stop();
+      shimmerLoop.stop();
+    };
+  }, []);
+
+  return (
+    <View style={titleStyles.container}>
+      {/* Title letters */}
+      <Animated.View style={[titleStyles.lettersRow, { transform: [{ scale: titlePulse }] }]}>
+        {TITLE_LETTERS.map((letter, i) => (
+          <Animated.Text
+            key={i}
+            style={[
+              titleStyles.letter,
+              {
+                opacity: letterAnims[i],
+                transform: [
+                  { scale: letterScales[i] },
+                  {
+                    translateY: letterAnims[i].interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [30, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            {letter}
+          </Animated.Text>
+        ))}
+      </Animated.View>
+
+      {/* Shimmer overlay */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          titleStyles.shimmer,
+          {
+            transform: [
+              {
+                translateX: shimmerPos.interpolate({
+                  inputRange: [-0.4, 1.4],
+                  outputRange: [-TITLE_FONT_SIZE * 2, screenWidth],
+                }),
+              },
+            ],
+            opacity: shimmerPos.interpolate({
+              inputRange: [-0.4, 0.2, 0.8, 1.4],
+              outputRange: [0, 0.6, 0.6, 0],
+            }),
+          },
+        ]}
+      />
+
+      {/* Subtitle */}
+      <Animated.Text
+        style={[
+          titleStyles.subtitle,
+          {
+            opacity: Animated.multiply(subtitleOpacity, subtitleBreath),
+          },
+        ]}
+      >
+        EMPIRE CONQUEST
+      </Animated.Text>
+    </View>
+  );
+}
+
+const titleStyles = StyleSheet.create({
+  container: {
+    alignItems: 'center',
+    overflow: 'hidden',
+    paddingVertical: 8,
+  },
+  lettersRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  letter: {
+    fontSize: TITLE_FONT_SIZE,
+    fontFamily: Platform.select({
+      ios: 'AvenirNext-Heavy',
+      android: 'sans-serif-black',
+      default: 'Inter_700Bold',
+    }),
+    fontWeight: '900',
+    color: '#FFD700',
+    letterSpacing: 4,
+    textShadowColor: 'rgba(255,215,0,0.9)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 20,
+    marginHorizontal: 2,
+  } as any,
+  shimmer: {
+    position: 'absolute',
+    top: 0,
+    width: TITLE_FONT_SIZE * 2.5,
+    height: TITLE_FONT_SIZE + 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    transform: [{ skewX: '-15deg' }],
+  } as any,
+  subtitle: {
+    fontSize: 13,
+    letterSpacing: 6,
+    color: 'rgba(255,215,0,0.6)',
+    fontFamily: 'Inter_500Medium',
+    marginTop: 12,
+  },
+});
+
+// ── Play Button with glow ───────────────────────────────────────────────────
+function PlayButton({ onPress }: { onPress: () => void }) {
+  const floatAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const shinePos = useRef(new Animated.Value(-1)).current;
+
+  useEffect(() => {
+    // Subtle float
+    const floatLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatAnim, { toValue: -2, duration: 1500, useNativeDriver: true }),
+        Animated.timing(floatAnim, { toValue: 2, duration: 1500, useNativeDriver: true }),
+      ])
+    );
+    floatLoop.start();
+
+    // Shine sweep every 4 seconds
+    const shineLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shinePos, { toValue: 1.5, duration: 700, useNativeDriver: true }),
+        Animated.delay(3300),
+        Animated.timing(shinePos, { toValue: -1, duration: 0, useNativeDriver: true }),
+      ])
+    );
+    shineLoop.start();
+
+    return () => { floatLoop.stop(); shineLoop.stop(); };
+  }, []);
+
+  const handlePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Animated.sequence([
+      Animated.timing(scaleAnim, { toValue: 0.94, duration: 60, useNativeDriver: true }),
+      Animated.spring(scaleAnim, { toValue: 1.0, tension: 300, friction: 8, useNativeDriver: true }),
+    ]).start();
+    onPress();
+  };
+
+  return (
+    <Animated.View
+      style={{
+        transform: [{ translateY: floatAnim }, { scale: scaleAnim }],
+        width: '100%',
+      }}
+    >
+      <TouchableOpacity style={playStyles.btn} onPress={handlePress} activeOpacity={0.85}>
+        {/* Shine sweep */}
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            playStyles.shine,
+            {
+              transform: [
+                {
+                  translateX: shinePos.interpolate({
+                    inputRange: [-1, 1.5],
+                    outputRange: [-100, screenWidth],
+                  }),
+                },
+              ],
+              opacity: shinePos.interpolate({
+                inputRange: [-1, 0, 0.8, 1.5],
+                outputRange: [0, 0.4, 0.4, 0],
+              }),
+            },
+          ]}
+        />
+        <View style={playStyles.iconWrap}>
+          <View style={playStyles.playTriangle} />
+        </View>
+        <Text style={playStyles.text}>PLAY</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+const playStyles = StyleSheet.create({
+  btn: {
+    width: '100%',
+    maxWidth: 300,
+    height: 56,
+    borderRadius: 14,
+    backgroundColor: '#B8942D',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    overflow: 'hidden',
+    // Glow via shadow
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 4px 15px rgba(255,215,0,0.4), 0px 0px 30px rgba(255,165,0,0.3), 0px 0px 60px rgba(255,100,0,0.15)',
+      } as any,
+      default: {
+        shadowColor: '#FFD700',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 15,
+        elevation: 8,
+      },
+    }),
+  },
+  shine: {
+    position: 'absolute',
+    top: 0,
+    width: 60,
+    height: '100%',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    transform: [{ skewX: '-20deg' }],
+  } as any,
+  iconWrap: {
+    width: 14,
+    height: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  playTriangle: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 10,
+    borderTopWidth: 6,
+    borderBottomWidth: 6,
+    borderLeftColor: '#1A0F00',
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+  },
+  text: {
+    fontSize: 18,
+    fontFamily: 'Inter_700Bold',
+    color: '#1A0F00',
+    letterSpacing: 3,
+  },
+});
+
+// ── Main Component ──────────────────────────────────────────────────────────
 export default function StartScreen({
   onStart, onShowTutorial, onCampaign, onTournament, onWorldMap,
   onClan, onReplays, onLocalMultiplayer,
@@ -82,28 +417,32 @@ export default function StartScreen({
 
   const [showStats, setShowStats] = useState(false);
 
-  const headerAnim = useRef(new Animated.Value(0)).current;
-  const listAnim = useRef(DIFFICULTIES.map(() => new Animated.Value(0))).current;
-  const scales = useRef(DIFFICULTIES.map(() => new Animated.Value(1))).current;
-  const scanAnim = useRef(new Animated.Value(-1)).current;
+  // Entrance animations
   const rankBarAnim = useRef(new Animated.Value(0)).current;
   const playBtnAnim = useRef(new Animated.Value(0)).current;
+  const listAnim = useRef(DIFFICULTIES.map(() => new Animated.Value(0))).current;
+  const scales = useRef(DIFFICULTIES.map(() => new Animated.Value(1))).current;
+  const secondaryAnims = useRef(SECONDARY_BUTTONS.map(() => new Animated.Value(0))).current;
 
   const progress = getRankProgress(xp);
   const rankColor = RANK_COLORS[rank];
 
   useEffect(() => {
-    Animated.timing(headerAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
-    Animated.timing(playBtnAnim, { toValue: 1, duration: 500, delay: 200, useNativeDriver: true }).start();
+    // Play button entrance (after title completes ~600ms)
+    Animated.timing(playBtnAnim, { toValue: 1, duration: 400, delay: 800, useNativeDriver: true }).start();
+
+    // Difficulty buttons staggered
     DIFFICULTIES.forEach((_, i) => {
-      Animated.timing(listAnim[i], { toValue: 1, duration: 420, delay: 320 + i * 130, useNativeDriver: true }).start();
+      Animated.timing(listAnim[i], { toValue: 1, duration: 420, delay: 900 + i * 130, useNativeDriver: true }).start();
     });
+
+    // Secondary buttons staggered
+    SECONDARY_BUTTONS.forEach((_, i) => {
+      Animated.timing(secondaryAnims[i], { toValue: 1, duration: 350, delay: 1100 + i * 80, useNativeDriver: true }).start();
+    });
+
+    // Rank bar
     Animated.timing(rankBarAnim, { toValue: progress.fraction, duration: 900, delay: 400, useNativeDriver: false }).start();
-    const scan = Animated.loop(
-      Animated.timing(scanAnim, { toValue: 1, duration: 3400, useNativeDriver: true })
-    );
-    scan.start();
-    return () => scan.stop();
   }, []);
 
   useEffect(() => {
@@ -118,43 +457,28 @@ export default function StartScreen({
     ]).start(() => onStart(key));
   };
 
-  const handlePlayPress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onStart('medium');
-  };
+  const handlePlayPress = () => onStart('medium');
 
   const callbackMap: Record<string, () => void> = {
     onCampaign, onTournament, onLocalMultiplayer, onWorldMap, onReplays, onClan,
   };
 
-  const scanTranslate = scanAnim.interpolate({ inputRange: [-1, 1], outputRange: ['-120%', '120%'] });
-
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: 'transparent' }}
+    <ScrollView
+      style={{ flex: 1, backgroundColor: 'transparent' }}
       contentContainerStyle={[styles.container, { paddingTop: topInset + 10, paddingBottom: bottomInset + 10 }]}
-      showsVerticalScrollIndicator={false}>
+      showsVerticalScrollIndicator={false}
+    >
+      {/* ── Cinematic Title ── */}
+      <CinematicTitle />
 
-      {/* ── Title ── */}
-      <Animated.View style={[styles.header, {
-        opacity: headerAnim,
-        transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
-      }]}>
-        <View style={styles.titleWrap}>
-          <Text style={styles.title}>THRAXON</Text>
-          <Animated.View
-            style={[styles.scanLine, { transform: [{ translateX: scanTranslate }] }, { pointerEvents: 'none' } as any]}
-          />
-        </View>
-        <Text style={styles.subtitle}>EMPIRE CONQUEST</Text>
-
-        {/* Clan badge */}
-        {clan && (
-          <TouchableOpacity style={[styles.clanBadge, { borderColor: clan.bannerColor + '44' }]} onPress={onClan}>
-            <View style={[styles.clanDot, { backgroundColor: clan.bannerColor }]} />
-            <Text style={[styles.clanText, { color: clan.bannerColor }]}>{clan.name}</Text>
-          </TouchableOpacity>
-        )}
-      </Animated.View>
+      {/* Clan badge */}
+      {clan && (
+        <TouchableOpacity style={[styles.clanBadge, { borderColor: clan.bannerColor + '44' }]} onPress={onClan}>
+          <View style={[styles.clanDot, { backgroundColor: clan.bannerColor }]} />
+          <Text style={[styles.clanText, { color: clan.bannerColor }]}>{clan.name}</Text>
+        </TouchableOpacity>
+      )}
 
       {/* ── Rank Display ── */}
       <View style={styles.rankSection}>
@@ -179,11 +503,9 @@ export default function StartScreen({
       {/* ── Play Button ── */}
       <Animated.View style={{
         opacity: playBtnAnim,
-        transform: [{ translateY: playBtnAnim.interpolate({ inputRange: [0, 1], outputRange: [15, 0] }) }],
+        transform: [{ translateY: playBtnAnim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }],
       }}>
-        <TouchableOpacity style={styles.playBtn} onPress={handlePlayPress} activeOpacity={0.8}>
-          <Text style={styles.playBtnText}>PLAY GAME</Text>
-        </TouchableOpacity>
+        <PlayButton onPress={handlePlayPress} />
       </Animated.View>
 
       {/* ── Difficulty selection ── */}
@@ -219,16 +541,29 @@ export default function StartScreen({
       <View style={styles.modesSection}>
         <Text style={styles.sectionLabel}>MORE MODES</Text>
         <View style={styles.modesGrid}>
-          {SECONDARY_BUTTONS.map((btn) => (
-            <TouchableOpacity
+          {SECONDARY_BUTTONS.map((btn, i) => (
+            <Animated.View
               key={btn.label}
-              style={styles.modeBtn}
-              onPress={() => callbackMap[btn.action]?.()}
-              activeOpacity={0.7}
+              style={{
+                opacity: secondaryAnims[i],
+                transform: [{
+                  translateY: secondaryAnims[i].interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [20, 0],
+                  }),
+                }],
+                width: '48%',
+              }}
             >
-              <Feather name={btn.icon} size={18} color={btn.color} />
-              <Text style={styles.modeBtnText}>{btn.label.toUpperCase()}</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modeBtn, { borderColor: 'rgba(255,215,0,0.2)' }]}
+                onPress={() => callbackMap[btn.action]?.()}
+                activeOpacity={0.7}
+              >
+                <Feather name={btn.icon} size={18} color={btn.color} />
+                <Text style={styles.modeBtnText}>{btn.label.toUpperCase()}</Text>
+              </TouchableOpacity>
+            </Animated.View>
           ))}
         </View>
       </View>
@@ -296,42 +631,20 @@ const styles = StyleSheet.create({
   container: {
     paddingHorizontal: 24,
     gap: 12,
+    alignItems: 'center',
   },
 
-  /* ── Header / Title ── */
-  header: { alignItems: 'center', gap: 4 },
-  titleWrap: { overflow: 'hidden', borderRadius: 4 },
-  title: {
-    fontSize: 42,
-    fontFamily: 'Inter_700Bold',
-    color: '#FFD700',
-    letterSpacing: 6,
-    textShadowColor: 'rgba(255,215,0,0.5)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 18,
-  },
-  subtitle: {
-    fontSize: 12,
-    letterSpacing: 5,
-    color: 'rgba(255,215,0,0.4)',
-    fontFamily: 'Inter_500Medium',
-    marginTop: 2,
-  },
-  scanLine: {
-    position: 'absolute', top: 0, bottom: 0, width: '55%',
-    backgroundColor: 'rgba(255,215,0,0.06)',
-    transform: [{ skewX: '-15deg' }],
-  },
+  /* ── Clan Badge ── */
   clanBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, borderWidth: 1,
-    backgroundColor: 'rgba(255,220,80,0.03)', marginTop: 6,
+    backgroundColor: 'rgba(255,220,80,0.03)',
   },
   clanDot: { width: 8, height: 8, borderRadius: 4 },
   clanText: { fontSize: 11, fontFamily: 'Inter_600SemiBold', letterSpacing: 0.5 },
 
   /* ── Rank Display ── */
-  rankSection: { alignItems: 'center', gap: 4, paddingVertical: 4 },
+  rankSection: { alignItems: 'center', gap: 4, paddingVertical: 4, width: '100%' },
   rankName: { fontSize: 14, fontFamily: 'Inter_700Bold', letterSpacing: 3 },
   rankBarOuter: {
     width: 200, height: 6, borderRadius: 3,
@@ -346,19 +659,8 @@ const styles = StyleSheet.create({
   rankXpNext: { fontSize: 10, color: 'rgba(255,215,0,0.35)', fontFamily: 'Inter_400Regular' },
   rankSeason: { fontSize: 9, color: 'rgba(255,215,0,0.25)', fontFamily: 'Inter_400Regular', letterSpacing: 1 },
 
-  /* ── Play Button ── */
-  playBtn: {
-    width: '100%', height: 56, borderRadius: 14,
-    backgroundColor: '#C8A84B',
-    borderWidth: 1, borderColor: 'rgba(255,215,0,0.5)',
-    justifyContent: 'center', alignItems: 'center',
-  },
-  playBtnText: {
-    fontSize: 17, fontFamily: 'Inter_700Bold', color: '#1A0F00', letterSpacing: 2,
-  },
-
   /* ── Difficulty Section ── */
-  difficultySection: { gap: 10 },
+  difficultySection: { gap: 10, width: '100%' },
   sectionLabel: {
     fontSize: 9, letterSpacing: 2.5, color: 'rgba(255,215,0,0.25)',
     fontFamily: 'Inter_600SemiBold', textAlign: 'center', marginBottom: 2,
@@ -376,17 +678,21 @@ const styles = StyleSheet.create({
   diffDesc: { fontSize: 12, color: 'rgba(255,220,140,0.38)', fontFamily: 'Inter_400Regular' },
 
   /* ── Secondary Buttons Grid ── */
-  modesSection: { gap: 10 },
+  modesSection: { gap: 10, width: '100%' },
   modesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between' },
   modeBtn: {
-    width: '48%', height: 48, flexDirection: 'row',
-    alignItems: 'center', justifyContent: 'center', gap: 8,
+    width: '100%',
+    height: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
   },
   modeBtnText: {
-    fontSize: 12, fontFamily: 'Inter_700Bold', color: '#FFFFFF', letterSpacing: 1,
+    fontSize: 12, fontFamily: 'Inter_700Bold', color: 'rgba(255,255,255,0.85)', letterSpacing: 1,
   },
 
   /* ── Bottom Row ── */

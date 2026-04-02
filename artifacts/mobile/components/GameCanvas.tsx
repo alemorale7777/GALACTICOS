@@ -35,14 +35,19 @@ function hasIntel(px: number, py: number, planets: Planet[]): boolean {
   return false;
 }
 
-// ── Performance thresholds ───────────────────────────────────────────────────
+// ── Performance thresholds (3-level adaptive quality) ────────────────────────
 const MAX_PARTICLES_HIGH = 120;
-const MAX_PARTICLES_LOW = 60;
-const MAX_TRAIL_HIGH = 3;
-const MAX_TRAIL_LOW = 2;
+const MAX_PARTICLES_MED = 50;
+const MAX_PARTICLES_LOW = 20;
+const MAX_TRAIL_HIGH = 4;
+const MAX_TRAIL_MED = 2;
+const MAX_TRAIL_LOW = 0;
 const MAX_FOG_WISPS_HIGH = 3;
-const MAX_FOG_WISPS_LOW = 1;
-const FPS_DEGRADE_THRESHOLD = 45;
+const MAX_FOG_WISPS_MED = 1;
+const MAX_FOG_WISPS_LOW = 0;
+const FPS_L2_THRESHOLD = 45;  // below this → quality L2
+const FPS_L1_THRESHOLD = 36;  // below this → quality L1
+const FPS_RESTORE_THRESHOLD = 55; // above this → restore quality
 
 // ── Visibility ───────────────────────────────────────────────────────────────
 function isVisible(px: number, py: number, planets: Planet[]): boolean {
@@ -569,7 +574,16 @@ export default function GameCanvas({
   const bgCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef(0);
   const fpsRef = useRef({ frames: 0, fps: 60, lastTime: performance.now() });
-  const perfRef = useRef({ maxParticles: MAX_PARTICLES_HIGH, maxTrail: MAX_TRAIL_HIGH, maxFogWisps: MAX_FOG_WISPS_HIGH, degraded: false });
+  const perfRef = useRef({
+    maxParticles: MAX_PARTICLES_HIGH,
+    maxTrail: MAX_TRAIL_HIGH,
+    maxFogWisps: MAX_FOG_WISPS_HIGH,
+    degraded: false,
+    qualityLevel: 3, // 3=high, 2=reduced, 1=minimal
+    restoreTimer: 0,
+    frameTimes: new Float32Array(60),
+    frameTimeIdx: 0,
+  });
   // Track last node scale for smooth lerping
   const nodeScaleCache = useRef<Map<number, number>>(new Map());
   // Ambient motes (8 tiny floating particles)
@@ -751,12 +765,13 @@ export default function GameCanvas({
     for (const cv of [gameC, bgC]) {
       cv.width = width * dpr; cv.height = height * dpr;
       cv.style.width = width + 'px'; cv.style.height = height + 'px';
+      cv.style.willChange = 'transform';
     }
-    const bgCtx = bgC.getContext('2d')!;
+    const bgCtx = bgC.getContext('2d')! as CanvasRenderingContext2D;
     bgCtx.scale(dpr, dpr);
     drawBg(bgCtx, width, height);
 
-    const ctx = gameC.getContext('2d')!;
+    const ctx = gameC.getContext('2d')! as CanvasRenderingContext2D;
     ctx.scale(dpr, dpr);
     ctx.imageSmoothingEnabled = false;
 
@@ -865,25 +880,76 @@ export default function GameCanvas({
     const departureTimestamps = new Map<number, number>(); // fleetFromId -> timestamp
     let lastFleetCount = 0;
 
+    // ── PRE-ALLOCATE per-frame lookup structures ──────────────────────────
+    const planetMap = new Map<number, Planet>();
+    const underAttackByEnemy = new Set<number>();
+    const underAttackByPlayer = new Set<number>();
+    const underAttackAny = new Set<number>();
+    const incomingUnits = new Map<number, number>();
+    const intelMap = new Map<number, boolean>();
+
+    let lastFrameTime = performance.now();
+
     function frame(now: number) {
-      // FPS tracking
+      // Delta time (capped to prevent spiral of death)
+      const dtMs = Math.min(now - lastFrameTime, 33);
+      const dt = dtMs / 1000; // seconds
+      lastFrameTime = now;
+
+      // FPS tracking with rolling frame time buffer
       const fp = fpsRef.current;
+      const perf = perfRef.current;
       fp.frames++;
+
+      // Record frame time
+      perf.frameTimes[perf.frameTimeIdx] = dtMs;
+      perf.frameTimeIdx = (perf.frameTimeIdx + 1) % 60;
+
       if (now - fp.lastTime >= 500) {
         fp.fps = Math.round(fp.frames / ((now - fp.lastTime) / 1000));
         fp.frames = 0; fp.lastTime = now;
-        // Adaptive quality
-        const perf = perfRef.current;
-        if (fp.fps < FPS_DEGRADE_THRESHOLD && !perf.degraded) {
+
+        // Calculate rolling average frame time
+        let avgFrameTime = 0;
+        for (let i = 0; i < 60; i++) avgFrameTime += perf.frameTimes[i];
+        avgFrameTime /= 60;
+
+        // 3-level adaptive quality
+        if (avgFrameTime > 28 && perf.qualityLevel > 1) {
+          // Below 36fps → minimal
+          perf.qualityLevel = 1;
           perf.degraded = true;
           perf.maxParticles = MAX_PARTICLES_LOW;
           perf.maxTrail = MAX_TRAIL_LOW;
           perf.maxFogWisps = MAX_FOG_WISPS_LOW;
-        } else if (fp.fps > 55 && perf.degraded) {
-          perf.degraded = false;
-          perf.maxParticles = MAX_PARTICLES_HIGH;
-          perf.maxTrail = MAX_TRAIL_HIGH;
-          perf.maxFogWisps = MAX_FOG_WISPS_HIGH;
+          perf.restoreTimer = 0;
+        } else if (avgFrameTime > 22 && perf.qualityLevel > 2) {
+          // Below 45fps → reduced
+          perf.qualityLevel = 2;
+          perf.degraded = true;
+          perf.maxParticles = MAX_PARTICLES_MED;
+          perf.maxTrail = MAX_TRAIL_MED;
+          perf.maxFogWisps = MAX_FOG_WISPS_MED;
+          perf.restoreTimer = 0;
+        } else if (avgFrameTime < 14 && perf.qualityLevel < 3) {
+          // Above 71fps for 5 seconds → restore one level
+          perf.restoreTimer += 500;
+          if (perf.restoreTimer >= 5000) {
+            perf.qualityLevel = Math.min(3, perf.qualityLevel + 1);
+            perf.restoreTimer = 0;
+            if (perf.qualityLevel === 3) {
+              perf.degraded = false;
+              perf.maxParticles = MAX_PARTICLES_HIGH;
+              perf.maxTrail = MAX_TRAIL_HIGH;
+              perf.maxFogWisps = MAX_FOG_WISPS_HIGH;
+            } else {
+              perf.maxParticles = MAX_PARTICLES_MED;
+              perf.maxTrail = MAX_TRAIL_MED;
+              perf.maxFogWisps = MAX_FOG_WISPS_MED;
+            }
+          }
+        } else {
+          perf.restoreTimer = 0;
         }
       }
 
@@ -892,19 +958,15 @@ export default function GameCanvas({
       const selId = selIdRef.current;
       const allSel = allSelRef.current;
       const ptr = ptrRef.current;
-      const perf = perfRef.current;
       const degraded = perf.degraded;
 
-      // ── PRE-COMPUTE LOOKUPS (O(1) instead of O(n) in hot loops) ──
-      // Planet map by ID
-      const planetMap = new Map<number, Planet>();
+      // ── PRE-COMPUTE LOOKUPS (clear + reuse pre-allocated structures) ──
+      planetMap.clear();
       for (let i = 0; i < planets.length; i++) planetMap.set(planets[i].id, planets[i]);
-      // Under-attack sets: which planet IDs have incoming enemy fleets
-      const underAttackByEnemy = new Set<number>(); // player nodes attacked by AI
-      const underAttackByPlayer = new Set<number>(); // AI nodes attacked by player
-      const underAttackAny = new Set<number>(); // any node under attack by opposing
-      // Incoming fleet counts per target
-      const incomingUnits = new Map<number, number>(); // target ID → total incoming units
+      underAttackByEnemy.clear();
+      underAttackByPlayer.clear();
+      underAttackAny.clear();
+      incomingUnits.clear();
       for (let i = 0; i < fleets.length; i++) {
         const f = fleets[i];
         const tgt = planetMap.get(f.toId);
@@ -991,7 +1053,7 @@ export default function GameCanvas({
         // Dark clouds
         for (let i = 0; i < 3; i++) {
           const cl = clouds[i];
-          cl.x += cl.speed;
+          cl.x += cl.speed * dt * 60;
           if (cl.x > width + cl.w) cl.x = -cl.w;
           ctx.beginPath();
           ctx.ellipse(cl.x, cl.y, cl.w * 0.5, cl.h * 0.5, 0, 0, TWO_PI);
@@ -1081,7 +1143,7 @@ export default function GameCanvas({
       const motes = ambientMotes.current;
       for (let i = 0; i < Math.min(4, motes.length); i++) {
         const m = motes[i];
-        m.x += m.vx * 0.012; m.y += m.vy * 0.012;
+        m.x += m.vx * dt; m.y += m.vy * dt;
         if (m.x < -10) m.x = width + 10;
         if (m.x > width + 10) m.x = -10;
         if (m.y < -10) m.y = height + 10;
@@ -1099,7 +1161,7 @@ export default function GameCanvas({
         prevOwners.set(p.id, p.owner);
       }
       captureTrans.forEach((tr, id) => {
-        tr.t = Math.min(1, tr.t + 0.033);
+        tr.t = Math.min(1, tr.t + dt);
         if (tr.t >= 1) captureTrans.delete(id);
       });
 
@@ -1299,8 +1361,8 @@ export default function GameCanvas({
         }
       }
 
-      // ── Pre-compute intel for war fog ──
-      const intelMap = new Map<number, boolean>();
+      // ── Pre-compute intel for war fog (reuse pre-allocated map) ──
+      intelMap.clear();
       for (let i = 0; i < planets.length; i++) {
         const p = planets[i];
         if (p.owner === 1 || p.owner === 0) {
@@ -1827,12 +1889,11 @@ export default function GameCanvas({
       }
 
       // ── UPDATE AND DRAW VFX PARTICLES ──
-      const dt = 1 / 60; // assume ~60fps timestep
       vfxActiveCount = 0;
       for (let i = 0; i < VFX_POOL_SIZE; i++) {
         const vp = vfxPool[i];
         if (!vp.active) continue;
-        vp.life += 16.67; // ~1 frame at 60fps
+        vp.life += dtMs;
         if (vp.life >= vp.maxLife) {
           vp.active = false;
           continue;
@@ -1954,10 +2015,15 @@ export default function GameCanvas({
         ctx.fillStyle = redVig; ctx.fillRect(0, 0, width, height);
       }
 
-      // ── ENHANCED FPS counter ──
-      const qualityMode = degraded ? 'LQ' : 'HQ';
-      ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.font = '9px monospace'; ctx.textAlign = 'left';
-      ctx.fillText(`${fp.fps} FPS | ${particlesDrawn}P | ${qualityMode}`, 6, 12);
+      // ── FPS counter (color-coded) ──
+      const fpsColor = fp.fps > 55 ? 'rgba(80,255,80,0.6)' : fp.fps >= 45 ? 'rgba(255,220,60,0.6)' : 'rgba(255,60,60,0.7)';
+      const ql = perf.qualityLevel;
+      ctx.fillStyle = fpsColor; ctx.font = '10px monospace'; ctx.textAlign = 'left';
+      ctx.fillText(`${fp.fps} FPS`, 6, 12);
+      if (ql < 3) {
+        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+        ctx.fillText(`L${ql}`, 56, 12);
+      }
 
       rafRef.current = requestAnimationFrame(frame);
     }
