@@ -24,6 +24,7 @@ import { Difficulty, FleetPercent, GameProvider, useGame, GamePhase } from '@/co
 import { useGameStorage } from '@/hooks/useGameStorage';
 import { useRankedSeason } from '@/hooks/useRankedSeason';
 import { useDailyChallenges } from '@/hooks/useDailyChallenges';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSoundEngine } from '@/hooks/useSoundEngine';
 import { useAdaptiveDifficulty } from '@/hooks/useAdaptiveDifficulty';
 import { calculateMatchQuality, getPlaystyle } from '@/utils/matchQuality';
@@ -336,6 +337,13 @@ export default function GameApp() {
   const [mapSize, setMapSize] = useState<MapSize>('medium');
   const [playerEmpire, setPlayerEmpire] = useState<EmpireConfig | null>(null);
   const [aiEmpire, setAiEmpire] = useState<EmpireConfig | null>(null);
+  const [lastEmpireId, setLastEmpireId] = useState<EmpireId | null>(null);
+  // Load last empire on mount
+  useEffect(() => {
+    AsyncStorage.getItem('@thraxon_last_empire').then(val => {
+      if (val && EMPIRE_CONFIG[val as EmpireId]) setLastEmpireId(val as EmpireId);
+    }).catch(() => {});
+  }, []);
   const [gameKey, setGameKey] = useState(0);
   const [appGameMode, setAppGameMode] = useState<AppGameMode>('quickplay');
   const [regicideMode, setRegicideMode] = useState<GameMode>('conquest');
@@ -457,6 +465,8 @@ export default function GameApp() {
     const aEmpire = EMPIRE_CONFIG[aiId];
     setPlayerEmpire(pEmpire);
     setAiEmpire(aEmpire);
+    setLastEmpireId(empireId);
+    AsyncStorage.setItem('@thraxon_last_empire', empireId).catch(() => {});
     sound.playEmpireMotif(empireId);
     transitionTo('mapsize');
   };
@@ -593,6 +603,7 @@ export default function GameApp() {
           clan={clanSystem.clan}
           soundEnabled={sound.settings.enabled}
           onToggleSound={sound.toggleSound}
+          lastEmpireId={lastEmpireId}
         />
       </View>
     );

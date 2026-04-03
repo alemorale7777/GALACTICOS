@@ -198,6 +198,92 @@ export default memo(function StarField() {
     const nebs = NEBULAE.map(n => ({ ...n }));
     const sils = SILHOUETTES.map(s => ({ ...s }));
 
+    // ── AMBIENT BATTLE SCENE (ghost war in background) ────────────────────
+    const TWO_PI = Math.PI * 2;
+    const BATTLE_OPACITY = 0.25; // all battle elements at this max
+    const COLORS = ['68,238,102', '238,51,68', '255,180,50', '100,180,255'];
+
+    // Ghost nodes scattered across screen
+    interface GhostNode {
+      x: number; y: number; r: number; owner: number; units: number;
+      pulsePhase: number;
+    }
+    const ghostNodes: GhostNode[] = [];
+    for (let i = 0; i < 10; i++) {
+      ghostNodes.push({
+        x: 40 + Math.random() * (W - 80),
+        y: 60 + Math.random() * (H - 120),
+        r: 8 + Math.random() * 6,
+        owner: i < 4 ? 0 : i < 7 ? 1 : 2,
+        units: 5 + Math.floor(Math.random() * 30),
+        pulsePhase: Math.random() * TWO_PI,
+      });
+    }
+
+    // Ghost fleets traveling between nodes
+    interface GhostFleet {
+      fromIdx: number; toIdx: number; progress: number; speed: number;
+      owner: number; units: number; arc: number;
+    }
+    const ghostFleets: GhostFleet[] = [];
+    function spawnGhostFleet() {
+      const ownerNodes = ghostNodes.filter((n, i) => n.owner > 0);
+      if (ownerNodes.length < 2) return;
+      const srcIdx = Math.floor(Math.random() * ghostNodes.length);
+      const src = ghostNodes[srcIdx];
+      if (src.owner === 0 || src.units < 5) return;
+      // Pick a different node
+      let tgtIdx = Math.floor(Math.random() * ghostNodes.length);
+      if (tgtIdx === srcIdx) tgtIdx = (tgtIdx + 1) % ghostNodes.length;
+      ghostFleets.push({
+        fromIdx: srcIdx, toIdx: tgtIdx,
+        progress: 0, speed: 0.08 + Math.random() * 0.06,
+        owner: src.owner, units: 2 + Math.floor(Math.random() * 4),
+        arc: (Math.random() - 0.5) * 80,
+      });
+    }
+    // Seed initial fleets
+    for (let i = 0; i < 4; i++) spawnGhostFleet();
+
+    // Clash sparks pool
+    interface ClashSpark {
+      active: boolean; x: number; y: number; vx: number; vy: number;
+      life: number; maxLife: number; color: string; size: number;
+    }
+    const clashSparks: ClashSpark[] = [];
+    for (let i = 0; i < 40; i++) {
+      clashSparks.push({ active: false, x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 300, color: '', size: 1 });
+    }
+    function spawnClash(x: number, y: number, color: string) {
+      for (let s = 0; s < 6; s++) {
+        for (const sp of clashSparks) {
+          if (!sp.active) {
+            const a = Math.random() * TWO_PI;
+            const spd = 30 + Math.random() * 50;
+            sp.active = true; sp.x = x; sp.y = y;
+            sp.vx = Math.cos(a) * spd; sp.vy = Math.sin(a) * spd;
+            sp.life = 0; sp.maxLife = 200 + Math.random() * 150;
+            sp.color = color; sp.size = 1 + Math.random() * 1.5;
+            break;
+          }
+        }
+      }
+    }
+
+    // Shockwave rings
+    interface ShockRing { active: boolean; x: number; y: number; t: number; color: string; }
+    const shockRings: ShockRing[] = [];
+    for (let i = 0; i < 6; i++) {
+      shockRings.push({ active: false, x: 0, y: 0, t: 0, color: '' });
+    }
+    function spawnShock(x: number, y: number, color: string) {
+      for (const sr of shockRings) {
+        if (!sr.active) { sr.active = true; sr.x = x; sr.y = y; sr.t = 0; sr.color = color; break; }
+      }
+    }
+
+    let nextFleetSpawn = 2000 + Math.random() * 3000;
+
     // Static background: drawn once to offscreen canvas
     const bgCanvas = document.createElement('canvas');
     bgCanvas.width = W * dpr;
@@ -310,6 +396,131 @@ export default memo(function StarField() {
         ctx.arc(p.x, p.y, 1, 0, Math.PI * 2);
         ctx.fillStyle = p.color;
         ctx.fill();
+      }
+
+      // ── AMBIENT BATTLE SCENE ────────────────────────────────────────────
+      // Spawn new fleets periodically
+      nextFleetSpawn -= dt * 1000;
+      if (nextFleetSpawn <= 0) {
+        spawnGhostFleet();
+        nextFleetSpawn = 3000 + Math.random() * 4000;
+      }
+
+      // Draw ghost nodes (pulsing circles)
+      for (const gn of ghostNodes) {
+        const pulse = 0.6 + 0.4 * Math.sin(now / 1800 + gn.pulsePhase);
+        const c = COLORS[gn.owner] || '141,110,99';
+        const nodeOp = BATTLE_OPACITY * 0.6 * pulse;
+        // Glow
+        const glow = ctx.createRadialGradient(gn.x, gn.y, gn.r * 0.3, gn.x, gn.y, gn.r + 8);
+        glow.addColorStop(0, `rgba(${c},${(nodeOp * 0.5).toFixed(3)})`);
+        glow.addColorStop(1, `rgba(${c},0)`);
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(gn.x, gn.y, gn.r + 8, 0, TWO_PI); ctx.fill();
+        // Core
+        ctx.beginPath(); ctx.arc(gn.x, gn.y, gn.r, 0, TWO_PI);
+        ctx.fillStyle = `rgba(${c},${nodeOp.toFixed(3)})`;
+        ctx.fill();
+        // Ring
+        ctx.beginPath(); ctx.arc(gn.x, gn.y, gn.r + 2, 0, TWO_PI);
+        ctx.strokeStyle = `rgba(${c},${(nodeOp * 0.5).toFixed(3)})`;
+        ctx.lineWidth = 1; ctx.stroke();
+      }
+
+      // Connection web between same-owner nodes
+      for (let i = 0; i < ghostNodes.length; i++) {
+        const a = ghostNodes[i];
+        if (a.owner === 0) continue;
+        for (let j = i + 1; j < ghostNodes.length; j++) {
+          const b = ghostNodes[j];
+          if (b.owner !== a.owner) continue;
+          const d = Math.hypot(a.x - b.x, a.y - b.y);
+          if (d > 160) continue;
+          const linkOp = BATTLE_OPACITY * 0.15 * (1 - d / 160);
+          const c = COLORS[a.owner];
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+          ctx.strokeStyle = `rgba(${c},${linkOp.toFixed(3)})`;
+          ctx.lineWidth = 1; ctx.stroke();
+        }
+      }
+
+      // Update and draw ghost fleets
+      for (let fi = ghostFleets.length - 1; fi >= 0; fi--) {
+        const gf = ghostFleets[fi];
+        gf.progress += gf.speed * dt;
+        const from = ghostNodes[gf.fromIdx];
+        const to = ghostNodes[gf.toIdx];
+        if (!from || !to) { ghostFleets.splice(fi, 1); continue; }
+
+        if (gf.progress >= 1) {
+          // Fleet arrived — clash!
+          const c = COLORS[gf.owner] || '255,255,255';
+          spawnClash(to.x, to.y, `rgba(${c},${BATTLE_OPACITY})`);
+          spawnShock(to.x, to.y, c);
+          // Flip node ownership occasionally
+          if (to.owner !== gf.owner && Math.random() < 0.4) {
+            to.owner = gf.owner;
+          }
+          ghostFleets.splice(fi, 1);
+          continue;
+        }
+
+        // Bezier position
+        const mx = (from.x + to.x) / 2 - Math.sin(Math.atan2(to.y - from.y, to.x - from.x)) * gf.arc;
+        const my = (from.y + to.y) / 2 + Math.cos(Math.atan2(to.y - from.y, to.x - from.x)) * gf.arc;
+        const mt = gf.progress;
+        const mt1 = 1 - mt;
+        const fx = mt1 * mt1 * from.x + 2 * mt1 * mt * mx + mt * mt * to.x;
+        const fy = mt1 * mt1 * from.y + 2 * mt1 * mt * my + mt * mt * to.y;
+
+        const c = COLORS[gf.owner] || '255,255,255';
+        const fleetOp = BATTLE_OPACITY * 0.8;
+
+        // Comet trail
+        for (let t = 1; t <= 4; t++) {
+          const tt = Math.max(0, gf.progress - t * 0.04);
+          const tt1 = 1 - tt;
+          const tx = tt1 * tt1 * from.x + 2 * tt1 * tt * mx + tt * tt * to.x;
+          const ty = tt1 * tt1 * from.y + 2 * tt1 * tt * my + tt * tt * to.y;
+          const tOp = fleetOp * (1 - t / 5);
+          ctx.beginPath(); ctx.arc(tx, ty, 2 - t * 0.3, 0, TWO_PI);
+          ctx.fillStyle = `rgba(${c},${tOp.toFixed(3)})`; ctx.fill();
+        }
+
+        // Fleet dot
+        ctx.beginPath(); ctx.arc(fx, fy, 3, 0, TWO_PI);
+        ctx.fillStyle = `rgba(${c},${fleetOp.toFixed(3)})`; ctx.fill();
+        // Fleet glow
+        const fg = ctx.createRadialGradient(fx, fy, 1, fx, fy, 8);
+        fg.addColorStop(0, `rgba(${c},${(fleetOp * 0.4).toFixed(3)})`);
+        fg.addColorStop(1, `rgba(${c},0)`);
+        ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(fx, fy, 8, 0, TWO_PI); ctx.fill();
+      }
+
+      // Update and draw clash sparks
+      for (const sp of clashSparks) {
+        if (!sp.active) continue;
+        sp.life += dt * 1000;
+        if (sp.life >= sp.maxLife) { sp.active = false; continue; }
+        sp.x += sp.vx * dt; sp.y += sp.vy * dt;
+        sp.vx *= 0.95; sp.vy *= 0.95;
+        const t = sp.life / sp.maxLife;
+        ctx.beginPath(); ctx.arc(sp.x, sp.y, sp.size * (1 - t * 0.5), 0, TWO_PI);
+        ctx.fillStyle = sp.color;
+        ctx.globalAlpha = (1 - t) * BATTLE_OPACITY;
+        ctx.fill(); ctx.globalAlpha = 1;
+      }
+
+      // Update and draw shockwave rings
+      for (const sr of shockRings) {
+        if (!sr.active) continue;
+        sr.t += dt * 1.5;
+        if (sr.t >= 1) { sr.active = false; continue; }
+        const shR = sr.t * 50;
+        const shOp = (1 - sr.t) * BATTLE_OPACITY * 0.6;
+        ctx.beginPath(); ctx.arc(sr.x, sr.y, shR, 0, TWO_PI);
+        ctx.strokeStyle = `rgba(${sr.color},${shOp.toFixed(3)})`;
+        ctx.lineWidth = 2 * (1 - sr.t); ctx.stroke();
       }
 
       // ── Vignette ──

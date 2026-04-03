@@ -15,6 +15,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Difficulty } from '@/context/GameContext';
 import { Colors } from '@/constants/colors';
+import { EmpireId, EMPIRE_CONFIG } from '@/constants/empires';
 import { GameStats } from '@/hooks/useGameStorage';
 import { RankTier } from '@/hooks/useRankedSeason';
 import { getRankProgress } from '@/hooks/useRankedSeason';
@@ -42,6 +43,7 @@ interface Props {
   clan: ClanData | null;
   soundEnabled: boolean;
   onToggleSound: () => void;
+  lastEmpireId?: string | null;
 }
 
 const DIFFICULTIES: { key: Difficulty; label: string; desc: string; color: string; icon: any }[] = [
@@ -77,7 +79,7 @@ function formatBestTime(ms: number): string {
 }
 
 // ── Cinematic Title Component ───────────────────────────────────────────────
-function CinematicTitle() {
+function CinematicTitle({ empireColor, empireName }: { empireColor?: string; empireName?: string }) {
   // Per-letter entrance animations
   const letterAnims = useRef(TITLE_LETTERS.map(() => new Animated.Value(0))).current;
   const letterScales = useRef(TITLE_LETTERS.map(() => new Animated.Value(0.3))).current;
@@ -168,6 +170,7 @@ function CinematicTitle() {
             key={i}
             style={[
               titleStyles.letter,
+              empireColor ? { color: empireColor, textShadowColor: empireColor } : {},
               {
                 opacity: letterAnims[i],
                 transform: [
@@ -218,7 +221,7 @@ function CinematicTitle() {
           },
         ]}
       >
-        EMPIRE CONQUEST
+        {empireName ? `EMPIRE OF ${empireName.toUpperCase()}` : 'EMPIRE CONQUEST'}
       </Animated.Text>
     </View>
   );
@@ -409,7 +412,7 @@ export default function StartScreen({
   onStart, onShowTutorial, onCampaign, onTournament, onWorldMap,
   onClan, onReplays, onLocalMultiplayer,
   stats, rank, xp, seasonDaysLeft, challenges, msUntilChallengeReset,
-  clan, soundEnabled, onToggleSound,
+  clan, soundEnabled, onToggleSound, lastEmpireId,
 }: Props) {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
@@ -470,8 +473,11 @@ export default function StartScreen({
       contentContainerStyle={[styles.container, { paddingTop: topInset + 10, paddingBottom: bottomInset + 10 }]}
       showsVerticalScrollIndicator={false}
     >
-      {/* ── Cinematic Title ── */}
-      <CinematicTitle />
+      {/* ── Cinematic Title (tinted by last empire) ── */}
+      <CinematicTitle
+        empireColor={lastEmpireId ? EMPIRE_CONFIG[lastEmpireId as EmpireId]?.nodeColor : undefined}
+        empireName={lastEmpireId ? EMPIRE_CONFIG[lastEmpireId as EmpireId]?.empire : undefined}
+      />
 
       {/* Clan badge */}
       {clan && (
@@ -501,11 +507,47 @@ export default function StartScreen({
       {/* ── Daily Challenges ── */}
       <DailyChallengesPanel challenges={challenges} msUntilReset={msUntilChallengeReset} />
 
-      {/* ── Play Button ── */}
+      {/* ── Play Button with War Map Constellation ── */}
       <Animated.View style={{
         opacity: playBtnAnim,
         transform: [{ translateY: playBtnAnim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }],
+        alignItems: 'center',
       }}>
+        {/* War map constellation behind button */}
+        <View style={{ position: 'absolute', width: 200, height: 100, top: -20 }} pointerEvents="none">
+          {/* 5 pulsing nodes */}
+          {[
+            { x: 30, y: 20 }, { x: 100, y: 8 }, { x: 170, y: 25 },
+            { x: 60, y: 65 }, { x: 140, y: 70 },
+          ].map((pos, i) => {
+            const empColor = lastEmpireId ? EMPIRE_CONFIG[lastEmpireId as EmpireId]?.nodeColor : '#FFD700';
+            return (
+              <Animated.View key={i} style={{
+                position: 'absolute', left: pos.x - 4, top: pos.y - 4,
+                width: 8, height: 8, borderRadius: 4,
+                backgroundColor: empColor || '#FFD700',
+                opacity: 0.2,
+                shadowColor: empColor || '#FFD700',
+                shadowOffset: { width: 0, height: 0 },
+                shadowOpacity: 0.6,
+                shadowRadius: 6,
+              }} />
+            );
+          })}
+          {/* Connection lines */}
+          {[
+            [30, 20, 100, 8], [100, 8, 170, 25], [30, 20, 60, 65],
+            [60, 65, 140, 70], [100, 8, 140, 70],
+          ].map(([x1, y1, x2, y2], i) => (
+            <View key={`l${i}`} style={{
+              position: 'absolute',
+              left: Math.min(x1, x2), top: Math.min(y1, y2),
+              width: Math.abs(x2 - x1) || 1, height: Math.abs(y2 - y1) || 1,
+              borderWidth: 0.5,
+              borderColor: (lastEmpireId ? EMPIRE_CONFIG[lastEmpireId as EmpireId]?.nodeColor : '#FFD700') + '22',
+            }} />
+          ))}
+        </View>
         <PlayButton onPress={handlePlayPress} />
       </Animated.View>
 
