@@ -208,21 +208,30 @@ export function BottomHUD({ abilityCooldown, abilityMaxCooldown, fleetPercent, o
   const warCryOpacity = useRef(new Animated.Value(0)).current;
   const warCryTransY = useRef(new Animated.Value(0)).current;
   const warCryTransX = useRef(new Animated.Value(0)).current;
+  const readyFlash = useRef(new Animated.Value(0)).current;
+  const wasOnCooldown = useRef(false);
 
   useEffect(() => {
     if (isReady) {
       const pulse = Animated.loop(Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.035, duration: 750, useNativeDriver: false }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 750, useNativeDriver: false }),
+        Animated.timing(pulseAnim, { toValue: 1.06, duration: 700, useNativeDriver: false }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: false }),
       ]));
       const glow = Animated.loop(Animated.sequence([
-        Animated.timing(glowAnim, { toValue: 1, duration: 900, useNativeDriver: false }),
-        Animated.timing(glowAnim, { toValue: 0, duration: 900, useNativeDriver: false }),
+        Animated.timing(glowAnim, { toValue: 1, duration: 800, useNativeDriver: false }),
+        Animated.timing(glowAnim, { toValue: 0, duration: 800, useNativeDriver: false }),
       ]));
       pulse.start(); glow.start();
+      // Flash "READY" burst when cooldown first completes
+      if (wasOnCooldown.current) {
+        readyFlash.setValue(1);
+        Animated.timing(readyFlash, { toValue: 0, duration: 800, useNativeDriver: false }).start();
+      }
+      wasOnCooldown.current = false;
       return () => { pulse.stop(); glow.stop(); };
     } else {
       pulseAnim.setValue(1); glowAnim.setValue(0);
+      wasOnCooldown.current = true;
     }
   }, [isReady]);
 
@@ -422,6 +431,13 @@ export function BottomHUD({ abilityCooldown, abilityMaxCooldown, fleetPercent, o
                 <Text style={styles.cooldownLabel}>{Math.ceil(abilityCooldown)}s</Text>
               </View>
             )}
+            {/* READY flash burst when cooldown completes */}
+            <Animated.Text style={{
+              position: 'absolute', top: -18, fontSize: 11, fontWeight: '800',
+              color: abilityColor, letterSpacing: 3,
+              opacity: readyFlash,
+              transform: [{ scale: readyFlash.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1.2] }) }],
+            }}>READY</Animated.Text>
           </TouchableOpacity>
         </Animated.View>
       </Animated.View>

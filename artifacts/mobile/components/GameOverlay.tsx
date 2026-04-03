@@ -101,6 +101,8 @@ export default function GameOverlay({
 
   // Icon glow pulse
   const iconGlow = useRef(new Animated.Value(0)).current;
+  // Screen flash (white on win, red on loss)
+  const screenFlash = useRef(new Animated.Value(0)).current;
 
   const confettiAnims = useRef(
     confettiMeta.map(() => ({
@@ -155,6 +157,10 @@ export default function GameOverlay({
       });
 
       if (phase === 'won') {
+        // Screen flash: white burst then fade
+        screenFlash.setValue(0.7);
+        Animated.timing(screenFlash, { toValue: 0, duration: 400, useNativeDriver: true }).start();
+
         // Victory title spring scale: 0 -> 1.1 -> 1.0
         Animated.sequence([
           Animated.delay(200),
@@ -194,6 +200,10 @@ export default function GameOverlay({
           ]).start();
         });
       } else {
+        // Screen flash: red burst then fade
+        screenFlash.setValue(0.5);
+        Animated.timing(screenFlash, { toValue: 0, duration: 500, useNativeDriver: true }).start();
+
         // Defeat title: jitter shake for 300ms then settle
         Animated.sequence([
           Animated.delay(200),
@@ -263,6 +273,12 @@ export default function GameOverlay({
       { opacity },
       !isWin && { backgroundColor: 'rgba(0,0,0,0.88)' },
     ]}>
+      {/* Screen flash (white on win, red on loss) */}
+      <Animated.View style={[StyleSheet.absoluteFill, {
+        backgroundColor: isWin ? '#FFFFFF' : '#FF0000',
+        opacity: screenFlash,
+      }]} pointerEvents="none" />
+
       {/* Victory: empire color fills screen from center */}
       {isWin && (
         <Animated.View style={[StyleSheet.absoluteFill, {

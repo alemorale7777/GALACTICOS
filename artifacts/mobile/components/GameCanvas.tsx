@@ -1181,6 +1181,7 @@ export default function GameCanvas({
     const intelMap = new Map<number, boolean>();
 
     let lastFrameTime = performance.now();
+    const prevNodeLevels = new Map<number, number>(); // track level-ups for VFX
 
     function frame(now: number) {
       // Delta time (capped to prevent spiral of death)
@@ -2217,6 +2218,21 @@ export default function GameCanvas({
 
         // ── Node upgrade stars (1-3 stars based on hold time) ──
         const nodeLevel = s.nodeLevels?.[p.id] || 0;
+        // Detect level-up → spawn gold burst VFX
+        const prevLvl = prevNodeLevels.get(p.id) || 0;
+        if (nodeLevel > prevLvl && prevLvl >= 0 && !degraded) {
+          // Gold particle explosion
+          for (let sp = 0; sp < 8; sp++) {
+            const ang = (sp / 8) * TWO_PI;
+            const spd = 40 + Math.random() * 40;
+            spawnVFX(px, py + r + 10, Math.cos(ang) * spd, Math.sin(ang) * spd,
+              2.5, '#FFD700', 500, 0, 'spark');
+          }
+          // Gold ring
+          spawnVFX(px, py, 0, 0, 0, '#FFD700', 400, 0, 'ring', 30, 2);
+        }
+        prevNodeLevels.set(p.id, nodeLevel);
+
         if (nodeLevel > 0 && p.owner !== 0 && !enemyHidden) {
           const starY = py + r + 10;
           const starSpacing = 10;
@@ -2810,6 +2826,41 @@ export default function GameCanvas({
         redVig.addColorStop(0, 'rgba(255,0,0,0)');
         redVig.addColorStop(1, `rgba(255,0,0,${redOp.toFixed(3)})`);
         ctx.fillStyle = redVig; ctx.fillRect(0, 0, width, height);
+      }
+
+      // ── CAPITAL SIEGE HEARTBEAT ──────────────────────────────────────────
+      // When player capital (id 0) is under attack: pulsing red heartbeat
+      const capitalUnderSiege = underAttackByEnemy.has(0) && planets[0]?.owner === 1;
+      if (capitalUnderSiege) {
+        // Double-beat heartbeat pattern (lub-dub)
+        const heartPhase = (now % 800) / 800;
+        const beat1 = heartPhase < 0.12 ? Math.sin(heartPhase / 0.12 * Math.PI) : 0;
+        const beat2 = heartPhase > 0.18 && heartPhase < 0.30 ? Math.sin((heartPhase - 0.18) / 0.12 * Math.PI) * 0.6 : 0;
+        const heartbeat = Math.max(beat1, beat2);
+        if (heartbeat > 0.01) {
+          const hbOp = heartbeat * 0.12;
+          ctx.fillStyle = `rgba(180,0,0,${hbOp.toFixed(3)})`;
+          ctx.fillRect(0, 0, width, height);
+          // Edge pulse
+          const edgeW = 8 + heartbeat * 15;
+          ctx.fillStyle = `rgba(255,0,0,${(heartbeat * 0.2).toFixed(3)})`;
+          ctx.fillRect(0, 0, edgeW, height);
+          ctx.fillRect(width - edgeW, 0, edgeW, height);
+          ctx.fillRect(0, 0, width, edgeW);
+          ctx.fillRect(0, height - edgeW, width, edgeW);
+        }
+      }
+
+      // ── SLOW-MOTION VISUAL OVERLAY ────────────────────────────────────────
+      if (s.timeScale < 0.8) {
+        const slowOp = (1 - s.timeScale) * 0.06;
+        ctx.fillStyle = `rgba(255,255,255,${slowOp.toFixed(3)})`;
+        ctx.fillRect(0, 0, width, height);
+        // Subtle radial blur effect (bright center)
+        const slowGrad = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, width * 0.6);
+        slowGrad.addColorStop(0, `rgba(255,255,255,${(slowOp * 0.5).toFixed(3)})`);
+        slowGrad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = slowGrad; ctx.fillRect(0, 0, width, height);
       }
 
       // (Text HUD clutter removed — game communicates via visuals now)

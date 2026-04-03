@@ -154,6 +154,9 @@ export interface GameState {
   // Node upgrade system (time held → level 1/2/3)
   nodeHoldTimers: Record<number, number>; // nodeId → seconds held by current owner
   nodeLevels: Record<number, number>; // nodeId → 0/1/2/3
+  // Time scale (slow-motion)
+  timeScale: number; // 1.0 = normal, 0.3 = slow-mo
+  timeScaleTimer: number; // seconds remaining in slow-mo
   // AI calibration (adaptive difficulty)
   aiCalibration: number; // 0.7-1.3, applied to AI fire rate and growth
   // Performance tracking
@@ -432,6 +435,8 @@ function createState(
     _lastLeader: 0,
     nodeHoldTimers: {},
     nodeLevels: {},
+    timeScale: 1.0,
+    timeScaleTimer: 0,
     aiCalibration: 1.0,
     _frameCount: 0,
     _fps: 60,
@@ -815,6 +820,16 @@ function tick(state: GameState, dt: number): void {
   // Cap delta time at 33ms
   dt = Math.min(dt, 0.033);
 
+  // ── Slow-motion time scale ──────────────────────────────────────────────
+  if (state.timeScaleTimer > 0) {
+    state.timeScaleTimer -= dt; // decay at real time
+    if (state.timeScaleTimer <= 0) {
+      state.timeScale = 1.0;
+      state.timeScaleTimer = 0;
+    }
+  }
+  dt *= state.timeScale; // apply slow-mo to game simulation
+
   // ── Ability active timer ────────────────────────────────────────────────
   if (state.abilityActive) {
     state.abilityActiveTimer -= dt;
@@ -1122,6 +1137,28 @@ function tick(state: GameState, dt: number): void {
         // Reset node hold timer on conquest
         state.nodeHoldTimers[targetAfter.id] = 0;
         state.nodeLevels[targetAfter.id] = 0;
+
+        // Slow-mo on capital conquest or overkill (3x+ units remaining)
+        const isCapitalConquest = targetBefore.nodeType === 'capital';
+        const isOverkill = targetAfter.units >= 3 * Math.max(1, Math.floor(targetBefore.units));
+        if (isCapitalConquest) {
+          state.timeScale = 0.2;
+          state.timeScaleTimer = 0.5;
+        } else if (isOverkill && fleet.owner === 1) {
+          state.timeScale = 0.35;
+          state.timeScaleTimer = 0.25;
+        }
+
+        // Overkill: massive gold explosion
+        if (isOverkill) {
+          spawnParticlesPooled(targetAfter.x, targetAfter.y, '255,215,0', 10, 8.0, fleet.owner);
+          spawnParticlesPooled(targetAfter.x, targetAfter.y, '255,255,255', 6, 9.0, 0);
+          state.floatingTexts.push({
+            id: uid(), x: targetAfter.x, y: targetAfter.y - targetAfter.radius - 35,
+            text: 'OVERKILL', color: '#FFD700', t: 0, size: 18,
+          });
+        }
+
         // Enhanced capture burst: 12 particles outward (8 empire color + 4 white)
         spawnParticlesPooled(targetAfter.x, targetAfter.y, attackColor, 8, 6.0, fleet.owner);
         spawnParticlesPooled(targetAfter.x, targetAfter.y, '255,255,255', 4, 7.5, 0);
@@ -1488,6 +1525,10 @@ export function GameProvider({
     state.abilityActive = true;
     state.abilityActiveTimer = empCfg.ability.duration;
     state.abilityCooldown = empCfg.ability.cooldown;
+
+    // Slow-motion on ability activation (300ms at 0.3x)
+    state.timeScale = 0.3;
+    state.timeScaleTimer = 0.3;
 
     // Spawn ability activation particles (reduced count for perf)
     for (const p of state.planets) {
