@@ -59,7 +59,8 @@ export default function RootLayout() {
     const hint = document.createElement('div');
     hint.id = 'rotate-hint';
     hint.style.cssText = 'display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.95);align-items:center;justify-content:center;flex-direction:column;gap:16px;';
-    hint.innerHTML = '<div style="font-size:48px;">📱↔️</div><div style="color:#FFD700;font-size:18px;font-weight:bold;letter-spacing:4px;">ROTATE YOUR DEVICE</div><div style="color:rgba(255,255,255,0.5);font-size:12px;">THRAXON plays best in landscape</div>';
+    hint.innerHTML = '<div style="font-size:48px;">📱↔️</div><div style="color:#FFD700;font-size:18px;font-weight:bold;letter-spacing:4px;">ROTATE YOUR DEVICE</div><div style="color:rgba(255,255,255,0.5);font-size:12px;">THRAXON plays best in landscape</div><div style="margin-top:24px;padding:12px 32px;border:1px solid rgba(255,215,0,0.3);border-radius:12px;color:rgba(255,255,255,0.7);font-size:14px;cursor:pointer;" onclick="this.parentElement.style.display=\'none\'">CONTINUE ANYWAY</div>';
+    hint.addEventListener('click', () => { hint.style.display = 'none'; });
     document.body.appendChild(hint);
     return () => { style.remove(); hint.remove(); };
   }, []);
