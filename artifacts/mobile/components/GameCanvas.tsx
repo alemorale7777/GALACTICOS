@@ -2865,6 +2865,47 @@ export default function GameCanvas({
 
       // (Text HUD clutter removed — game communicates via visuals now)
 
+      // ── DOMINATION PROGRESS BAR ─────────────────────────────────────────
+      if (s.gameMode === 'domination' && planets.length > 0) {
+        const domTarget = Math.ceil(planets.length * 0.60);
+        const playerPct = playerNodeCount / planets.length;
+        const aiPct = aiNodeCount / planets.length;
+        const barW = width - 40;
+        const barH = 6;
+        const barX = 20;
+        const barY = 28;
+        // Background track
+        ctx.fillStyle = 'rgba(255,255,255,0.08)';
+        ctx.beginPath(); ctx.roundRect(barX, barY, barW, barH, 3); ctx.fill();
+        // Player fill (left side, empire color)
+        const pColor = pEmpRef.current?.glowRgb ?? '68,238,102';
+        const playerBarW = playerPct * barW;
+        if (playerBarW > 1) {
+          ctx.fillStyle = `rgba(${pColor},0.7)`;
+          ctx.beginPath(); ctx.roundRect(barX, barY, playerBarW, barH, 3); ctx.fill();
+        }
+        // AI fill (right side, enemy color)
+        const aColor = aEmpRef.current?.glowRgb ?? '238,51,68';
+        const aiBarW = aiPct * barW;
+        if (aiBarW > 1) {
+          ctx.fillStyle = `rgba(${aColor},0.5)`;
+          ctx.beginPath(); ctx.roundRect(barX + barW - aiBarW, barY, aiBarW, barH, 3); ctx.fill();
+        }
+        // 60% threshold marker
+        const threshX = barX + 0.60 * barW;
+        ctx.fillStyle = 'rgba(255,215,0,0.6)';
+        ctx.fillRect(threshX - 1, barY - 2, 2, barH + 4);
+        // Labels
+        ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillStyle = `rgba(${pColor},0.8)`;
+        ctx.fillText(`${playerNodeCount}/${domTarget}`, barX + playerBarW / 2, barY - 3);
+        ctx.fillStyle = `rgba(${aColor},0.6)`;
+        ctx.fillText(`${aiNodeCount}`, barX + barW - aiBarW / 2, barY - 3);
+        // "DOMINATION" label
+        ctx.fillStyle = 'rgba(255,215,0,0.35)'; ctx.font = '7px sans-serif';
+        ctx.fillText('DOMINATION', width / 2, barY + barH + 10);
+      }
+
       // ── FPS counter (color-coded) ──
       const fpsColor = fp.fps > 55 ? 'rgba(80,255,80,0.6)' : fp.fps >= 45 ? 'rgba(255,220,60,0.6)' : 'rgba(255,60,60,0.7)';
       const ql = perf.qualityLevel;

@@ -422,7 +422,7 @@ function createState(
     aiAbilityCooldown: 0,
     aiAbilityActive: false,
     aiAbilityActiveTimer: 0,
-    fogEnabled: mapSize === 'large',
+    fogEnabled: mapSize === 'large' && gameMode !== 'domination', // No fog in Domination
     mirageOffsets: {},
     playerStreak: 0,
     gameMode,
@@ -1222,16 +1222,7 @@ function tick(state: GameState, dt: number): void {
     }
   }
 
-  // ── Domination: AI resilience — if AI has ≤1 node, boost its growth to stay competitive
-  if (state.gameMode === 'domination') {
-    const aiNodes = state.planets.filter(p => p.owner === 2);
-    if (aiNodes.length <= 1 && aiNodes.length > 0) {
-      // Emergency boost: triple growth on last AI node to prevent total wipeout
-      for (const an of aiNodes) {
-        an.units = Math.min(999, an.units + 0.15 * dt * 60);
-      }
-    }
-  }
+  // (AI resilience removed — Domination should be winnable, not a grind)
 
   // ── AI ──────────────────────────────────────────────────────────────────
   aiTick(state, dt);
@@ -1375,11 +1366,11 @@ function tick(state: GameState, dt: number): void {
     }
   }
 
-  // Domination mode — control 70% of all nodes to win (skip standard elimination)
+  // Domination mode — control 60% of all nodes to win
   if (state.gameMode === 'domination') {
     const total = state.planets.length;
     if (total > 0) {
-      const domThreshold = Math.ceil(total * 0.70);
+      const domThreshold = Math.ceil(total * 0.60);
       if (playerPlanets.length >= domThreshold) {
         state.phase = 'won';
         state.gameEndTime = Date.now();
@@ -1391,12 +1382,7 @@ function tick(state: GameState, dt: number): void {
         return;
       }
     }
-    // In domination, you can still lose if fully eliminated
-    if (playerPlanets.length === 0 && playerFleets === 0) {
-      state.phase = 'lost';
-      state.gameEndTime = Date.now();
-    }
-    return; // Skip standard elimination — game continues even if AI has 0 nodes
+    // Also allow standard elimination as fallback
   }
 
   // Standard elimination check (conquest & regicide)
