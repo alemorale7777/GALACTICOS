@@ -8,6 +8,7 @@ import {
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect } from 'react';
+import { Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -28,6 +29,40 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
+
+  // Force landscape orientation on web
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    // Try Screen Orientation API (Chrome/Edge)
+    try {
+      const screen = (window as any).screen;
+      if (screen?.orientation?.lock) {
+        screen.orientation.lock('landscape').catch(() => {});
+      }
+    } catch {}
+    // Add CSS to force landscape hint
+    const style = document.createElement('style');
+    style.textContent = `
+      @media (orientation: portrait) {
+        #rotate-hint {
+          display: flex !important;
+        }
+      }
+      @media (orientation: landscape) {
+        #rotate-hint {
+          display: none !important;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    // Add rotate hint overlay
+    const hint = document.createElement('div');
+    hint.id = 'rotate-hint';
+    hint.style.cssText = 'display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.95);align-items:center;justify-content:center;flex-direction:column;gap:16px;';
+    hint.innerHTML = '<div style="font-size:48px;">📱↔️</div><div style="color:#FFD700;font-size:18px;font-weight:bold;letter-spacing:4px;">ROTATE YOUR DEVICE</div><div style="color:rgba(255,255,255,0.5);font-size:12px;">THRAXON plays best in landscape</div>';
+    document.body.appendChild(hint);
+    return () => { style.remove(); hint.remove(); };
+  }, []);
 
   if (!fontsLoaded && !fontError) return null;
 
