@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Platform, StyleSheet, Text, View } from 'react-native';
+import { Animated, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import GameCanvas from '@/components/GameCanvas';
 import GameOverlay from '@/components/GameOverlay';
@@ -388,15 +388,15 @@ export default function GameApp() {
   };
 
   const getMatchupInfo = useCallback(() => {
-    const pId = selectedEmpire || '';
-    const aId = aiEmpire || '';
+    const pId = playerEmpire?.id || '';
+    const aId = aiEmpire?.id || '';
     const pTrait = EMPIRE_TRAITS[pId] || 'SKILL';
     const aTrait = EMPIRE_TRAITS[aId] || 'SKILL';
     const key1 = `${pId}-${aId}`;
     const key2 = `${aId}-${pId}`;
     const tip = MATCHUP_TIPS[key1] || MATCHUP_TIPS[key2] || 'Use your ability at the right moment';
     return { type: `${pTrait} vs ${aTrait}`, tip };
-  }, [selectedEmpire, aiEmpire]);
+  }, [playerEmpire, aiEmpire]);
 
   const playGameIntro = useCallback(() => {
     setShowGameIntro(true);
