@@ -1,7 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 
 import GameCanvas from '@/components/GameCanvas';
+
+const RANK_COLORS: Record<string, string> = {
+  Squire: '#8B7355', Knight: '#C0C0C0', Warlord: '#FFD700', Galactico: '#FF6B35', Legend: '#FF2D55',
+};
 import GameOverlay from '@/components/GameOverlay';
 import { BottomHUD, TopHUD } from '@/components/HUD';
 import LeaderSelect from '@/components/LeaderSelect';
@@ -11,10 +16,7 @@ import StartScreen from '@/components/StartScreen';
 import TutorialOverlay from '@/components/TutorialOverlay';
 import TournamentScreen from '@/components/TournamentScreen';
 import CampaignScreen from '@/components/CampaignScreen';
-import WorldMapScreen from '@/components/WorldMapScreen';
-import ClanScreen from '@/components/ClanScreen';
-import ReplayScreen from '@/components/ReplayScreen';
-import LocalMultiplayerSetup from '@/components/LocalMultiplayerSetup';
+// Dead features removed: WorldMap, Clan, Replays, LocalMultiplayer
 import CampaignLoreScreen from '@/components/CampaignLoreScreen';
 
 import { Colors } from '@/constants/colors';
@@ -28,14 +30,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSoundEngine } from '@/hooks/useSoundEngine';
 import { useAdaptiveDifficulty } from '@/hooks/useAdaptiveDifficulty';
 import { calculateMatchQuality, getPlaystyle } from '@/utils/matchQuality';
-import { useReplaySystem } from '@/hooks/useReplaySystem';
-import { useWorldMap } from '@/hooks/useWorldMap';
+// Dead hook imports removed (useReplaySystem, useWorldMap)
 import { useCampaign } from '@/hooks/useCampaign';
 import { useTournament } from '@/hooks/useTournament';
-import { useClanSystem } from '@/hooks/useClanSystem';
+// Dead hook import removed (useClanSystem)
 
 type AppScreen = 'start' | 'leader' | 'mapsize' | 'tutorial' | 'game'
-  | 'tournament' | 'campaign' | 'campaignlore' | 'worldmap' | 'clan' | 'replays' | 'localmulti';
+  | 'tournament' | 'campaign' | 'campaignlore' | 'stats';
 
 // ─── Inner game view ──────────────────────────────────────────────────────
 interface GameViewProps {
@@ -329,7 +330,7 @@ function GameView({ onMenu, onChangeEmpire, onGameEnd, playerEmpire, aiEmpire, g
 }
 
 // ─── Root app shell ────────────────────────────────────────────────────────
-type AppGameMode = 'quickplay' | 'campaign' | 'tournament' | 'localmulti';
+type AppGameMode = 'quickplay' | 'campaign' | 'tournament';
 
 export default function GameApp() {
   const [screen, setScreen] = useState<AppScreen>('start');
@@ -354,11 +355,8 @@ export default function GameApp() {
   const ranked = useRankedSeason();
   const dailies = useDailyChallenges();
   const sound = useSoundEngine();
-  const replays = useReplaySystem();
-  const worldMap = useWorldMap();
   const campaign = useCampaign();
   const tournament = useTournament();
-  const clanSystem = useClanSystem();
 
   // ── Screen transition system ──
   const transitionOpacity = useRef(new Animated.Value(1)).current;
@@ -481,8 +479,7 @@ export default function GameApp() {
   const handleTutorialDone = () => {
     markTutorialSeen();
     goToGame('quickplay');
-    replays.startRecording();
-  };
+     };
 
   const handleGameEnd = useCallback(async (
     won: boolean, elapsedMs: number, nodesCaptures: number, abilityUsed: boolean
@@ -507,23 +504,6 @@ export default function GameApp() {
       await ranked.addEmpireMasteryXP(playerEmpire.id, challengeResult.masteryEarned);
     }
 
-    // World map territories (all modes)
-    if (won) {
-      const claim = mapSize === 'large' ? 3 : mapSize === 'medium' ? 2 : 1;
-      await worldMap.claimTerritories(playerEmpire.id, claim);
-    }
-
-    // Clan XP (all modes)
-    if (clanSystem.clan) {
-      const clanXP = won ? 100 : 30;
-      await clanSystem.addClanXP(clanXP);
-    }
-
-    // Replay (all modes)
-    await replays.finishRecording(
-      playerEmpire.id, aiEmpire.id, mapSize, won, elapsedMs, nodesCaptures
-    );
-
     // ── MODE-SPECIFIC RESULTS ──
 
     // Campaign: record map completion
@@ -536,16 +516,7 @@ export default function GameApp() {
       await tournament.resolveMatch(won, nodesCaptures);
     }
   }, [playerEmpire, aiEmpire, mapSize, appGameMode, campaignEmpireId, campaignMapIdx,
-      ranked, dailies, worldMap, clanSystem, replays, sound, campaign, tournament]);
-
-  const handleShareReplay = useCallback((replay: any) => {
-    const text = replays.getShareText(replay);
-    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && (navigator as any).share) {
-      (navigator as any).share({ text }).catch(() => {});
-    } else if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(text).catch(() => {});
-    }
-  }, [replays]);
+      ranked, dailies, sound, campaign, tournament]);
 
   // Tournament handlers
   const handleStartTournament = useCallback(async () => {
@@ -590,17 +561,13 @@ export default function GameApp() {
           onShowTutorial={() => transitionTo('tutorial')}
           onCampaign={() => transitionTo('campaign')}
           onTournament={() => transitionTo('tournament')}
-          onWorldMap={() => transitionTo('worldmap')}
-          onClan={() => transitionTo('clan')}
-          onReplays={() => transitionTo('replays')}
-          onLocalMultiplayer={() => transitionTo('localmulti')}
+          onStats={() => transitionTo('stats')}
           stats={stats}
           rank={ranked.data.rank}
           xp={ranked.data.currentXP}
           seasonDaysLeft={ranked.seasonDaysLeft}
           challenges={dailies.challenges}
           msUntilChallengeReset={dailies.msUntilMidnight}
-          clan={clanSystem.clan}
           soundEnabled={sound.settings.enabled}
           onToggleSound={sound.toggleSound}
           lastEmpireId={lastEmpireId}
@@ -702,58 +669,60 @@ export default function GameApp() {
     );
   }
 
-  if (screen === 'worldmap') {
+  if (screen === 'stats') {
+    const totalGames = stats.wins + stats.losses;
+    const winRate = totalGames > 0 ? Math.round((stats.wins / totalGames) * 100) : 0;
+    const bestTimeStr = stats.bestTimeMs ? `${Math.floor(stats.bestTimeMs / 60000)}:${String(Math.floor((stats.bestTimeMs % 60000) / 1000)).padStart(2, '0')}` : '--';
     return (
       <View style={styles.root}>
         <StarField />
-        <WorldMapScreen data={worldMap.data} onBack={goToMenu} />
-      </View>
-    );
-  }
+        <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: 80, backgroundColor: 'transparent' }}>
+          <TouchableOpacity onPress={goToMenu} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 20, alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.4)' }}>
+            <Feather name="chevron-left" size={18} color="rgba(255,255,255,0.7)" />
+            <Text style={{ fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.7)', letterSpacing: 1 }}>BACK</Text>
+          </TouchableOpacity>
+          <Text style={{ color: 'rgba(255,200,60,0.45)', fontSize: 10, letterSpacing: 4, textAlign: 'center' }}>YOUR</Text>
+          <Text style={{ color: '#FFF5D6', fontSize: 28, fontWeight: '700', letterSpacing: 5, textAlign: 'center', marginBottom: 4 }}>STATISTICS</Text>
+          <View style={{ width: 52, height: 2, borderRadius: 1, backgroundColor: 'rgba(255,200,60,0.5)', alignSelf: 'center', marginBottom: 24 }} />
 
-  if (screen === 'clan') {
-    return (
-      <View style={styles.root}>
-        <StarField />
-        <ClanScreen
-          clan={clanSystem.clan}
-          onCreateClan={(name, color) => clanSystem.createClan(name, color)}
-          onJoinClan={(code) => clanSystem.joinClan(code)}
-          onLeaveClan={() => clanSystem.leaveClan()}
-          onGetShareCode={() => clanSystem.getShareCode()}
-          onBack={goToMenu}
-        />
-      </View>
-    );
-  }
+          {/* Big stats row */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginBottom: 24 }}>
+            {[
+              { value: String(totalGames), label: 'GAMES' },
+              { value: String(stats.wins), label: 'VICTORIES' },
+              { value: `${winRate}%`, label: 'WIN RATE' },
+            ].map((s, i) => (
+              <View key={i} style={{ alignItems: 'center' }}>
+                <Text style={{ color: '#FFD700', fontSize: 28, fontWeight: '700' }}>{s.value}</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 9, letterSpacing: 2, marginTop: 2 }}>{s.label}</Text>
+              </View>
+            ))}
+          </View>
 
-  if (screen === 'replays') {
-    return (
-      <View style={styles.root}>
-        <StarField />
-        <ReplayScreen
-          replays={replays.replays}
-          onShare={handleShareReplay}
-          onBack={goToMenu}
-        />
-      </View>
-    );
-  }
-
-  if (screen === 'localmulti') {
-    return (
-      <View style={styles.root}>
-        <StarField />
-        <LocalMultiplayerSetup
-          onStart={(p1Emp, p2Emp, ms) => {
-            setPlayerEmpire(EMPIRE_CONFIG[p1Emp]);
-            setAiEmpire(EMPIRE_CONFIG[p2Emp]);
-            setMapSize(ms);
-            setDifficulty('medium');
-            goToGame('localmulti');
-          }}
-          onBack={goToMenu}
-        />
+          {/* Detail cards */}
+          {[
+            { icon: 'clock', label: 'Best Time', value: bestTimeStr, color: '#44BB66' },
+            { icon: 'zap', label: 'Current Streak', value: String(stats.streak), color: '#EEAA22' },
+            { icon: 'x-circle', label: 'Defeats', value: String(stats.losses), color: '#EE3344' },
+            { icon: 'award', label: 'Rank', value: ranked.data.rank.toUpperCase(), color: RANK_COLORS[ranked.data.rank] || '#C0C0C0' },
+            { icon: 'star', label: 'Season XP', value: String(ranked.data.currentXP), color: '#FFD700' },
+          ].map((item, i) => (
+            <View key={i} style={{
+              flexDirection: 'row', alignItems: 'center', gap: 14,
+              backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 14,
+              borderWidth: 1, borderColor: item.color + '33',
+              paddingVertical: 14, paddingHorizontal: 16, marginBottom: 10,
+            }}>
+              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: item.color + '22', justifyContent: 'center', alignItems: 'center' }}>
+                <Feather name={item.icon as any} size={16} color={item.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, letterSpacing: 1.5 }}>{item.label.toUpperCase()}</Text>
+                <Text style={{ color: item.color, fontSize: 18, fontWeight: '700', marginTop: 2 }}>{item.value}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
       </View>
     );
   }

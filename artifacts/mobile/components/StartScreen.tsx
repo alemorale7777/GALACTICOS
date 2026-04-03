@@ -20,7 +20,6 @@ import { GameStats } from '@/hooks/useGameStorage';
 import { RankTier } from '@/hooks/useRankedSeason';
 import { getRankProgress } from '@/hooks/useRankedSeason';
 import { Challenge } from '@/hooks/useDailyChallenges';
-import { ClanData } from '@/hooks/useClanSystem';
 import DailyChallengesPanel from './DailyChallengesPanel';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -30,17 +29,13 @@ interface Props {
   onShowTutorial: () => void;
   onCampaign: () => void;
   onTournament: () => void;
-  onWorldMap: () => void;
-  onClan: () => void;
-  onReplays: () => void;
-  onLocalMultiplayer: () => void;
+  onStats: () => void;
   stats: GameStats;
   rank: RankTier;
   xp: number;
   seasonDaysLeft: number;
   challenges: Challenge[];
   msUntilChallengeReset: number;
-  clan: ClanData | null;
   soundEnabled: boolean;
   onToggleSound: () => void;
   lastEmpireId?: string | null;
@@ -63,10 +58,7 @@ const RANK_COLORS: Record<RankTier, string> = {
 const SECONDARY_BUTTONS: { label: string; icon: any; color: string; action: keyof Props }[] = [
   { label: 'Campaign', icon: 'book-open', color: '#FFD700', action: 'onCampaign' },
   { label: 'Tournament', icon: 'flag', color: '#FF6B35', action: 'onTournament' },
-  { label: '2 Player', icon: 'users', color: '#44BB66', action: 'onLocalMultiplayer' },
-  { label: 'World Map', icon: 'globe', color: '#22AAAA', action: 'onWorldMap' },
-  { label: 'Replays', icon: 'film', color: '#AA88FF', action: 'onReplays' },
-  { label: 'Clans', icon: 'shield', color: '#FF5588', action: 'onClan' },
+  { label: 'Stats', icon: 'bar-chart-2', color: '#22AAAA', action: 'onStats' },
 ];
 
 const TITLE_LETTERS = ['T', 'H', 'R', 'A', 'X', 'O', 'N'];
@@ -409,10 +401,9 @@ const playStyles = StyleSheet.create({
 
 // ── Main Component ──────────────────────────────────────────────────────────
 export default function StartScreen({
-  onStart, onShowTutorial, onCampaign, onTournament, onWorldMap,
-  onClan, onReplays, onLocalMultiplayer,
+  onStart, onShowTutorial, onCampaign, onTournament, onStats,
   stats, rank, xp, seasonDaysLeft, challenges, msUntilChallengeReset,
-  clan, soundEnabled, onToggleSound, lastEmpireId,
+  soundEnabled, onToggleSound, lastEmpireId,
 }: Props) {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
@@ -464,7 +455,7 @@ export default function StartScreen({
   const handlePlayPress = () => onStart('medium');
 
   const callbackMap: Record<string, () => void> = {
-    onCampaign, onTournament, onLocalMultiplayer, onWorldMap, onReplays, onClan,
+    onCampaign, onTournament, onStats,
   };
 
   return (
@@ -478,14 +469,6 @@ export default function StartScreen({
         empireColor={lastEmpireId ? EMPIRE_CONFIG[lastEmpireId as EmpireId]?.nodeColor : undefined}
         empireName={lastEmpireId ? EMPIRE_CONFIG[lastEmpireId as EmpireId]?.empire : undefined}
       />
-
-      {/* Clan badge */}
-      {clan && (
-        <TouchableOpacity style={[styles.clanBadge, { borderColor: clan.bannerColor + '44' }]} onPress={onClan}>
-          <View style={[styles.clanDot, { backgroundColor: clan.bannerColor }]} />
-          <Text style={[styles.clanText, { color: clan.bannerColor }]}>{clan.name}</Text>
-        </TouchableOpacity>
-      )}
 
       {/* ── Rank Display ── */}
       <View style={styles.rankSection}>
