@@ -25,6 +25,8 @@ import { useGameStorage } from '@/hooks/useGameStorage';
 import { useRankedSeason } from '@/hooks/useRankedSeason';
 import { useDailyChallenges } from '@/hooks/useDailyChallenges';
 import { useSoundEngine } from '@/hooks/useSoundEngine';
+import { useAdaptiveDifficulty } from '@/hooks/useAdaptiveDifficulty';
+import { calculateMatchQuality, getPlaystyle } from '@/utils/matchQuality';
 import { useReplaySystem } from '@/hooks/useReplaySystem';
 import { useWorldMap } from '@/hooks/useWorldMap';
 import { useCampaign } from '@/hooks/useCampaign';
@@ -67,6 +69,8 @@ function GameView({ onMenu, onChangeEmpire, onGameEnd, playerEmpire, aiEmpire, g
   const resultRecordedRef = useRef(false);
   const prevBestRef = useRef<number | null>(null);
   const abilityUsedRef = useRef(false);
+  // F12: Match quality state
+  const [matchQualityData, setMatchQualityData] = useState<{ stars: number; playstyle: { label: string; desc: string } } | null>(null);
   const warCryFlashAnim = useRef(new Animated.Value(0)).current;
 
   const comboOpacity = useRef(new Animated.Value(0)).current;
@@ -194,6 +198,9 @@ function GameView({ onMenu, onChangeEmpire, onGameEnd, playerEmpire, aiEmpire, g
       ? state.planets.filter(p => p.owner === 1).length / state.planets.length : 0.5;
     const target = dominance > 0.65 ? 0.05 : 0;
     Animated.timing(atmTintAnim, { toValue: target, duration: 1800, useNativeDriver: false }).start();
+    // F10: Update adaptive music based on territory ratio
+    const combatActive = state.fleets.length > 3;
+    sound.updateMusic(dominance, combatActive);
   }, [playerPlanets]);
 
   // Game end handling
@@ -204,15 +211,25 @@ function GameView({ onMenu, onChangeEmpire, onGameEnd, playerEmpire, aiEmpire, g
       const elapsed = state.gameEndTime ? state.gameEndTime - state.gameStartTime : 0;
       recordWin(elapsed);
       sound.sfxVictory();
+      sound.stopMusic();
       if (Platform.OS !== 'web' && typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate([100, 50, 100]);
       onGameEnd(true, elapsed, state.playerConquestTotal, abilityUsedRef.current);
+      // F12: Calculate match quality
+      const mq = calculateMatchQuality(state.leadChanges, state.playerConquestTotal, state.enemyConquestTotal, elapsed, state.playerMaxCombo, true, state.planets.length);
+      const ps = getPlaystyle(state.playerFleetsLaunched, elapsed, true, state.leadChanges, state.playerMaxCombo);
+      setMatchQualityData({ stars: mq, playstyle: ps });
     } else if (state.phase === 'lost' && !resultRecordedRef.current) {
       resultRecordedRef.current = true;
       recordLoss();
       sound.sfxDefeat();
+      sound.stopMusic();
       if (Platform.OS !== 'web' && typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(200);
       const elapsed = state.gameEndTime ? state.gameEndTime - state.gameStartTime : 0;
       onGameEnd(false, elapsed, state.playerConquestTotal, abilityUsedRef.current);
+      // F12: Calculate match quality
+      const mq = calculateMatchQuality(state.leadChanges, state.playerConquestTotal, state.enemyConquestTotal, elapsed, state.playerMaxCombo, false, state.planets.length);
+      const ps = getPlaystyle(state.playerFleetsLaunched, elapsed, false, state.leadChanges, state.playerMaxCombo);
+      setMatchQualityData({ stars: mq, playstyle: ps });
     }
   }, [state.phase]);
 
@@ -228,6 +245,7 @@ function GameView({ onMenu, onChangeEmpire, onGameEnd, playerEmpire, aiEmpire, g
     abilityUsedRef.current = false;
     comboDataRef.current = { count: 0, lastTime: 0 };
     setComboLabel(''); setTauntText('');
+    setMatchQualityData(null);
     setSelectedPlanetId(null); setSelectedPlanetIds(new Set()); setAllSelected(false);
     resetGame(state.difficulty, playAreaSize.width, playAreaSize.height);
   }, [resetGame, state.difficulty, playAreaSize]);
@@ -303,7 +321,8 @@ function GameView({ onMenu, onChangeEmpire, onGameEnd, playerEmpire, aiEmpire, g
         onChangeEmpire={handleChangeEmpire} elapsedMs={elapsedMs}
         stats={stats} prevBestTimeMs={prevBestRef.current}
         playerEmpire={playerEmpire} nodesCaptures={state.playerConquestTotal}
-        gameMode={gameMode} />
+        gameMode={gameMode}
+        matchQuality={matchQualityData?.stars} playstyle={matchQualityData?.playstyle} />
     </View>
   );
 }
@@ -342,26 +361,79 @@ export default function GameApp() {
     });
   }, []);
 
-  // ── Game intro state ──
+  // ── Game intro state (F8: enhanced 4-phase intro) ──
   const [showGameIntro, setShowGameIntro] = useState(false);
+  const [showMatchup, setShowMatchup] = useState(false);
   const introOpacity = useRef(new Animated.Value(1)).current;
-  const introIconScale = useRef(new Animated.Value(0.5)).current;
+  const introIconScale = useRef(new Animated.Value(0.3)).current;
   const introTextOpacity = useRef(new Animated.Value(0)).current;
+  const introFlashOpacity = useRef(new Animated.Value(0)).current;
+  const matchupOpacity = useRef(new Animated.Value(0)).current;
+
+  // F7: Empire trait map for matchup analysis
+  const EMPIRE_TRAITS: Record<string, string> = {
+    egypt: 'GROWTH', rome: 'DEFENSE', mongols: 'SPEED', ptolemaic: 'DECEPTION',
+    japan: 'OFFENSE', vikings: 'BURST', aztec: 'SACRIFICE', persian: 'MOBILITY',
+    ottoman: 'EXPANSION', han: 'FORTRESS',
+  };
+  const MATCHUP_TIPS: Record<string, string> = {
+    'egypt-mongols': 'Use Ra early before Blitz closes the gap',
+    'rome-aztec': 'Testudo blocks Blood Sacrifice burst',
+    'ptolemaic-vikings': 'Bait Berserker into attacking wrong node',
+    'egypt-rome': 'Outgrow the defense with sustained Ra',
+    'mongols-han': 'Speed beats walls — raid before Great Wall',
+    'japan-persian': 'Strike fast before Immortals arrive',
+    'ottoman-aztec': 'Bazaar starves Blood Sacrifice economy',
+    'vikings-han': 'Break the wall with Berserker force',
+  };
+
+  const getMatchupInfo = useCallback(() => {
+    const pId = selectedEmpire || '';
+    const aId = aiEmpire || '';
+    const pTrait = EMPIRE_TRAITS[pId] || 'SKILL';
+    const aTrait = EMPIRE_TRAITS[aId] || 'SKILL';
+    const key1 = `${pId}-${aId}`;
+    const key2 = `${aId}-${pId}`;
+    const tip = MATCHUP_TIPS[key1] || MATCHUP_TIPS[key2] || 'Use your ability at the right moment';
+    return { type: `${pTrait} vs ${aTrait}`, tip };
+  }, [selectedEmpire, aiEmpire]);
 
   const playGameIntro = useCallback(() => {
     setShowGameIntro(true);
     introOpacity.setValue(1);
-    introIconScale.setValue(0.5);
+    introIconScale.setValue(0.3);
     introTextOpacity.setValue(0);
-    // Icon entrance
-    Animated.spring(introIconScale, { toValue: 1.2, tension: 80, friction: 8, useNativeDriver: true }).start();
-    // "BATTLE BEGINS" text
+    introFlashOpacity.setValue(0);
+
+    // Phase 1 (0-400ms): Empire color flash
     Animated.sequence([
-      Animated.delay(1200),
-      Animated.timing(introTextOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-      Animated.delay(600),
+      Animated.timing(introFlashOpacity, { toValue: 0.6, duration: 150, useNativeDriver: true }),
+      Animated.timing(introFlashOpacity, { toValue: 0, duration: 250, useNativeDriver: true }),
+    ]).start();
+
+    // Phase 2 (200-900ms): Icon spring with overshoot
+    setTimeout(() => {
+      Animated.spring(introIconScale, { toValue: 1.2, tension: 120, friction: 6, useNativeDriver: true }).start();
+    }, 200);
+
+    // Phase 3 (900-1400ms): Text slide in
+    Animated.sequence([
+      Animated.delay(900),
+      Animated.timing(introTextOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+      Animated.delay(500),
+      // Phase 4 (1400-1800ms): Fade everything out
       Animated.timing(introOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
-    ]).start(() => setShowGameIntro(false));
+    ]).start(() => {
+      setShowGameIntro(false);
+      // F7: Show matchup analysis after intro
+      setShowMatchup(true);
+      matchupOpacity.setValue(0);
+      Animated.sequence([
+        Animated.timing(matchupOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.delay(2000),
+        Animated.timing(matchupOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
+      ]).start(() => setShowMatchup(false));
+    });
   }, []);
 
   const goToGame = (mode: AppGameMode = 'quickplay') => {
@@ -369,6 +441,8 @@ export default function GameApp() {
     setGameKey(k => k + 1);
     setScreen('game');
     playGameIntro();
+    // F10: Start adaptive music
+    sound.startMusic();
   };
   const goToMenu = () => transitionTo('start');
 
@@ -695,21 +769,44 @@ export default function GameApp() {
         />
       </GameProvider>
 
-      {/* Game intro overlay */}
+      {/* F8: Enhanced game intro overlay (4-phase) */}
       {showGameIntro && (
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.introOverlay, { opacity: introOpacity }]}>
+          {/* Phase 1: Empire color flash */}
+          <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: playerEmpire?.nodeColor ?? '#FFD700', opacity: introFlashOpacity }]} />
+          {/* Phase 2: Icon spring */}
           <Animated.Text style={[styles.introIcon, {
             transform: [{ scale: introIconScale }],
             color: playerEmpire?.nodeColor ?? '#FFD700',
           }]}>
             {regicideMode === 'regicide' ? '👑' : '⚔️'}
           </Animated.Text>
+          {/* Phase 3: Text slide in */}
           <Animated.Text style={[styles.introText, { opacity: introTextOpacity }]}>
             {regicideMode === 'regicide' ? 'THE KING MUST FALL' : 'BATTLE BEGINS'}
           </Animated.Text>
           <Animated.Text style={[styles.introMode, { opacity: introTextOpacity, color: playerEmpire?.nodeColor ?? '#FFD700' }]}>
             {playerEmpire?.empire?.toUpperCase() ?? 'THRAXON'}
           </Animated.Text>
+        </Animated.View>
+      )}
+
+      {/* F7: Pre-game matchup analysis overlay */}
+      {showMatchup && (
+        <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', opacity: matchupOpacity }]}>
+          <TouchableOpacity activeOpacity={0.8} onPress={() => setShowMatchup(false)} style={{
+            backgroundColor: 'rgba(8,8,20,0.92)', borderRadius: 16,
+            borderWidth: 1, borderColor: 'rgba(255,215,0,0.30)',
+            paddingHorizontal: 28, paddingVertical: 20, alignItems: 'center', maxWidth: 320,
+          }}>
+            <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, letterSpacing: 3 }}>MATCHUP ANALYSIS</Text>
+            <Text style={{ color: 'rgba(255,215,0,0.8)', fontSize: 15, marginTop: 10, fontWeight: 'bold', textAlign: 'center' }}>
+              {getMatchupInfo().type}
+            </Text>
+            <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 8, textAlign: 'center', fontStyle: 'italic' }}>
+              {getMatchupInfo().tip}
+            </Text>
+          </TouchableOpacity>
         </Animated.View>
       )}
     </View>

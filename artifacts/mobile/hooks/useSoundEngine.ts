@@ -221,24 +221,236 @@ export function useSoundEngine() {
     playSequence([880, 1047, 1319], 0.12, 'sine', 0.25);
   }, [playSequence]);
 
-  // Empire motifs
+  // Empire motifs (all 10 empires)
   const playEmpireMotif = useCallback((empireId: string) => {
     switch (empireId) {
       case 'egypt':
-        playSequence([440, 550, 660, 880], 0.15, 'triangle', 0.2);
-        break;
+        playSequence([440, 550, 660, 880], 0.15, 'triangle', 0.2); break;
       case 'rome':
-        playSequence([261, 329, 392, 523], 0.18, 'square', 0.15);
-        break;
+        playSequence([261, 329, 392, 523], 0.18, 'square', 0.15); break;
       case 'mongols':
         playTone(80, 0.15, 'sine', 0.3);
-        setTimeout(() => playSequence([880, 1047, 880], 0.08, 'sine', 0.15), 200);
-        break;
+        setTimeout(() => playSequence([880, 1047, 880], 0.08, 'sine', 0.15), 200); break;
       case 'ptolemaic':
-        playSequence([523, 659, 784, 1047], 0.2, 'sine', 0.2);
-        break;
+        playSequence([523, 659, 784, 1047], 0.2, 'sine', 0.2); break;
+      case 'japan':
+        playSequence([440, 523, 659, 784], 0.12, 'triangle', 0.2); break;
+      case 'vikings':
+        playTone(100, 0.25, 'sine', 0.35);
+        setTimeout(() => playSequence([329, 392, 440], 0.15, 'triangle', 0.2), 300); break;
+      case 'aztec':
+        playSequence([220, 261, 329, 220], 0.14, 'square', 0.15); break;
+      case 'persian':
+        playSequence([349, 440, 523, 659], 0.18, 'sine', 0.2); break;
+      case 'ottoman':
+        playSequence([523, 440, 349, 261], 0.16, 'triangle', 0.18); break;
+      case 'han':
+        playTone(180, 0.8, 'sine', 0.3); break;
     }
   }, [playSequence, playTone]);
+
+  // ── F11: Empire-specific ability sounds ────────────────────────────────────
+  const sfxEmpireAbility = useCallback((empireId: string) => {
+    const ctx = ensureContext();
+    if (!ctx || !settings.enabled) return;
+    const v = vol();
+    if (v <= 0) return;
+    const now = ctx.currentTime;
+    switch (empireId) {
+      case 'egypt': {
+        // Bell-like 440Hz + harmonic
+        const o1 = ctx.createOscillator(); const o2 = ctx.createOscillator();
+        const g = ctx.createGain();
+        o1.frequency.value = 440; o1.type = 'sine';
+        o2.frequency.value = 880; o2.type = 'sine';
+        g.gain.setValueAtTime(v * 0.3, now);
+        g.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+        o1.connect(g); o2.connect(g); g.connect(ctx.destination);
+        o1.start(now); o2.start(now); o1.stop(now + 0.8); o2.stop(now + 0.8);
+        break;
+      }
+      case 'rome': {
+        // Brass fanfare chord
+        [261, 329, 392].forEach((freq, i) => {
+          const o = ctx.createOscillator(); const g = ctx.createGain();
+          o.frequency.value = freq; o.type = 'square';
+          g.gain.setValueAtTime(0, now + i * 0.04);
+          g.gain.linearRampToValueAtTime(v * 0.12, now + i * 0.04 + 0.05);
+          g.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+          o.connect(g); g.connect(ctx.destination);
+          o.start(now); o.stop(now + 0.5);
+        });
+        break;
+      }
+      case 'mongols': {
+        // Rumble + high whistle
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.frequency.setValueAtTime(120, now);
+        o.frequency.exponentialRampToValueAtTime(40, now + 0.15);
+        o.type = 'sine';
+        g.gain.setValueAtTime(v * 0.4, now);
+        g.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        o.connect(g); g.connect(ctx.destination); o.start(now); o.stop(now + 0.2);
+        const w = ctx.createOscillator(); const wg = ctx.createGain();
+        w.frequency.setValueAtTime(1200, now + 0.1);
+        w.frequency.exponentialRampToValueAtTime(880, now + 0.3);
+        w.type = 'sine';
+        wg.gain.setValueAtTime(v * 0.15, now + 0.1);
+        wg.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+        w.connect(wg); wg.connect(ctx.destination); w.start(now + 0.1); w.stop(now + 0.35);
+        break;
+      }
+      case 'ptolemaic': {
+        // Ethereal harp arpeggio
+        [523, 659, 784, 1047].forEach((freq, i) => {
+          const o = ctx.createOscillator(); const g = ctx.createGain();
+          o.frequency.value = freq; o.type = 'sine';
+          const t = now + i * 0.1;
+          g.gain.setValueAtTime(v * 0.15, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+          o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.4);
+        });
+        break;
+      }
+      case 'japan': {
+        // Sword slash sweep
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.frequency.setValueAtTime(800, now);
+        o.frequency.exponentialRampToValueAtTime(200, now + 0.15);
+        o.type = 'sawtooth';
+        g.gain.setValueAtTime(v * 0.25, now);
+        g.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        o.connect(g); g.connect(ctx.destination); o.start(now); o.stop(now + 0.2);
+        break;
+      }
+      case 'vikings': {
+        // Deep war drum + frost shimmer
+        const d = ctx.createOscillator(); const dg = ctx.createGain();
+        d.frequency.setValueAtTime(120, now);
+        d.frequency.exponentialRampToValueAtTime(40, now + 0.2);
+        d.type = 'sine';
+        dg.gain.setValueAtTime(v * 0.5, now);
+        dg.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+        d.connect(dg); dg.connect(ctx.destination); d.start(now); d.stop(now + 0.25);
+        const s = ctx.createOscillator(); const sg = ctx.createGain();
+        s.frequency.value = 2000; s.type = 'triangle';
+        sg.gain.setValueAtTime(v * 0.06, now + 0.1);
+        sg.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+        s.connect(sg); sg.connect(ctx.destination); s.start(now + 0.1); s.stop(now + 0.5);
+        break;
+      }
+      case 'aztec': {
+        // Ritual drum pattern
+        [0, 0.08, 0.16].forEach(offset => {
+          const o = ctx.createOscillator(); const g = ctx.createGain();
+          o.frequency.setValueAtTime(100, now + offset);
+          o.frequency.exponentialRampToValueAtTime(50, now + offset + 0.1);
+          o.type = 'sine';
+          g.gain.setValueAtTime(v * 0.4, now + offset);
+          g.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.12);
+          o.connect(g); g.connect(ctx.destination);
+          o.start(now + offset); o.stop(now + offset + 0.15);
+        });
+        break;
+      }
+      case 'persian': {
+        // Mystical rising tone
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.frequency.setValueAtTime(200, now);
+        o.frequency.exponentialRampToValueAtTime(600, now + 0.4);
+        o.type = 'sine';
+        g.gain.setValueAtTime(v * 0.2, now);
+        g.gain.setValueAtTime(v * 0.2, now + 0.3);
+        g.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+        o.connect(g); g.connect(ctx.destination); o.start(now); o.stop(now + 0.6);
+        break;
+      }
+      case 'ottoman': {
+        // Resonant call: 3 descending tones
+        [523, 440, 349].forEach((freq, i) => {
+          const o = ctx.createOscillator(); const g = ctx.createGain();
+          o.frequency.value = freq; o.type = 'triangle';
+          const t = now + i * 0.12;
+          g.gain.setValueAtTime(v * 0.18, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+          o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.3);
+        });
+        break;
+      }
+      case 'han': {
+        // Imperial gong
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.frequency.setValueAtTime(180, now);
+        o.frequency.exponentialRampToValueAtTime(160, now + 1.0);
+        o.type = 'sine';
+        g.gain.setValueAtTime(v * 0.4, now);
+        g.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+        o.connect(g); g.connect(ctx.destination); o.start(now); o.stop(now + 1.2);
+        break;
+      }
+    }
+  }, [ensureContext, settings, vol]);
+
+  // ── F10: Adaptive music system ─────────────────────────────────────────────
+  const musicRef = useRef<{
+    baseDrone: OscillatorNode | null;
+    baseDroneGain: GainNode | null;
+    tensionDrone: OscillatorNode | null;
+    tensionGain: GainNode | null;
+    victoryHarmonic: OscillatorNode | null;
+    victoryGain: GainNode | null;
+    running: boolean;
+  }>({ baseDrone: null, baseDroneGain: null, tensionDrone: null, tensionGain: null, victoryHarmonic: null, victoryGain: null, running: false });
+
+  const startMusic = useCallback(() => {
+    const ctx = ensureContext();
+    if (!ctx || !settings.enabled || musicRef.current.running) return;
+    const mv = vol() * 0.15;
+    // Base drone 55Hz
+    const bd = ctx.createOscillator(); const bdg = ctx.createGain();
+    bd.frequency.value = 55; bd.type = 'sine';
+    bdg.gain.value = mv * 0.8;
+    bd.connect(bdg); bdg.connect(ctx.destination); bd.start();
+    // Tension 82Hz
+    const td = ctx.createOscillator(); const tg = ctx.createGain();
+    td.frequency.value = 82; td.type = 'triangle';
+    tg.gain.value = 0;
+    td.connect(tg); tg.connect(ctx.destination); td.start();
+    // Victory 220Hz
+    const vh = ctx.createOscillator(); const vg = ctx.createGain();
+    vh.frequency.value = 220; vh.type = 'sine';
+    vg.gain.value = 0;
+    vh.connect(vg); vg.connect(ctx.destination); vh.start();
+
+    musicRef.current = { baseDrone: bd, baseDroneGain: bdg, tensionDrone: td, tensionGain: tg, victoryHarmonic: vh, victoryGain: vg, running: true };
+  }, [ensureContext, settings, vol]);
+
+  const updateMusic = useCallback((playerPercent: number, activeCombat: boolean) => {
+    const m = musicRef.current;
+    if (!m.running) return;
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const mv = vol() * 0.15;
+    // Tension builds when losing
+    const tensionLevel = playerPercent < 0.40 ? (0.40 - playerPercent) / 0.40 * mv * 0.8 : 0;
+    m.tensionGain?.gain.linearRampToValueAtTime(tensionLevel, now + 3);
+    // Victory builds when winning
+    const victoryLevel = playerPercent > 0.65 ? (playerPercent - 0.65) / 0.35 * mv * 0.6 : 0;
+    m.victoryGain?.gain.linearRampToValueAtTime(victoryLevel, now + 3);
+    // Beat pulse during combat
+    const baseLevel = activeCombat ? mv * 1.2 : mv * 0.8;
+    m.baseDroneGain?.gain.linearRampToValueAtTime(baseLevel, now + 1);
+  }, [vol]);
+
+  const stopMusic = useCallback(() => {
+    const m = musicRef.current;
+    if (!m.running) return;
+    try { m.baseDrone?.stop(); } catch {}
+    try { m.tensionDrone?.stop(); } catch {}
+    try { m.victoryHarmonic?.stop(); } catch {}
+    musicRef.current.running = false;
+  }, []);
 
   // Ambient battlefield hum
   const startAmbient = useCallback(() => {
@@ -294,7 +506,9 @@ export function useSoundEngine() {
     settings, toggleSound, updateSettings,
     sfxDispatch, sfxCapture, sfxAbility, sfxImpact,
     sfxVictory, sfxDefeat, sfxRankUp, sfxChallengeComplete,
-    playEmpireMotif, startAmbient, stopAmbient,
+    playEmpireMotif, sfxEmpireAbility,
+    startAmbient, stopAmbient,
+    startMusic, updateMusic, stopMusic,
     ensureContext,
   };
 }

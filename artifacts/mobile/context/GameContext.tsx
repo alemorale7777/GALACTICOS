@@ -129,6 +129,21 @@ export interface GameState {
   mirageOffsets: Record<number, number>;
   playerStreak: number; // win streak bonus
   gameMode: GameMode;
+  // Combo/streak tracking
+  playerComboCount: number; // consecutive conquests without losing a node
+  playerComboTimer: number; // seconds remaining to keep combo alive
+  playerMaxCombo: number; // best combo this match
+  // Aggression tracking
+  playerFleetsLaunched: number;
+  enemyFleetsLaunched: number;
+  // Match quality
+  leadChanges: number;
+  _lastLeader: 0 | 1 | 2;
+  // Node upgrade system (time held → level 1/2/3)
+  nodeHoldTimers: Record<number, number>; // nodeId → seconds held by current owner
+  nodeLevels: Record<number, number>; // nodeId → 0/1/2/3
+  // AI calibration (adaptive difficulty)
+  aiCalibration: number; // 0.7-1.3, applied to AI fire rate and growth
   // Performance tracking
   _frameCount: number;
   _fps: number;
@@ -395,6 +410,16 @@ function createState(
     mirageOffsets: {},
     playerStreak: 0,
     gameMode,
+    playerComboCount: 0,
+    playerComboTimer: 0,
+    playerMaxCombo: 0,
+    playerFleetsLaunched: 0,
+    enemyFleetsLaunched: 0,
+    leadChanges: 0,
+    _lastLeader: 0,
+    nodeHoldTimers: {},
+    nodeLevels: {},
+    aiCalibration: 1.0,
     _frameCount: 0,
     _fps: 60,
     _lastFpsTime: Date.now(),
@@ -402,8 +427,19 @@ function createState(
   };
 }
 
+// ── Combat result metadata (for VFX) ─────────────────────────────────────────
+interface CombatResult {
+  wasCritical: boolean;
+  wasNearMiss: boolean;
+  wasConquest: boolean;
+  defenderRemaining: number;
+}
+let _lastCombatResult: CombatResult = { wasCritical: false, wasNearMiss: false, wasConquest: false, defenderRemaining: 0 };
+
 // ── Combat resolution ─────────────────────────────────────────────────────────
 function resolveCombat(fleet: Fleet, planets: Planet[], state: GameState): Planet[] {
+  _lastCombatResult = { wasCritical: false, wasNearMiss: false, wasConquest: false, defenderRemaining: 0 };
+
   return planets.map(p => {
     if (p.id !== fleet.toId) return p;
 
@@ -412,7 +448,13 @@ function resolveCombat(fleet: Fleet, planets: Planet[], state: GameState): Plane
       return { ...p, units: p.units + fleet.units };
     }
 
+    // Critical strike: 15% chance for 1.5x damage
+    const isCritical = Math.random() < 0.15;
     let attackUnits = fleet.units;
+    if (isCritical) {
+      attackUnits = Math.round(attackUnits * 1.5);
+      _lastCombatResult.wasCritical = true;
+    }
 
     // Testudo: fleets take 50% less casualties when active
     if (state.abilityActive && state.playerEmpireId === 'rome' && fleet.owner === 1) {
@@ -451,6 +493,7 @@ function resolveCombat(fleet: Fleet, planets: Planet[], state: GameState): Plane
     const effectiveDefense = Math.round(p.units * defMult);
 
     if (attackUnits > effectiveDefense) {
+      _lastCombatResult.wasConquest = true;
       const remainingAttack = attackUnits - effectiveDefense;
       // Ratio back to actual units
       const isTestudo = (state.abilityActive && state.playerEmpireId === 'rome' && fleet.owner === 1)
@@ -475,7 +518,13 @@ function resolveCombat(fleet: Fleet, planets: Planet[], state: GameState): Plane
 
     const remainingDefense = effectiveDefense - attackUnits;
     const actualRemainingDef = Math.round(remainingDefense / defMult);
-    return { ...p, units: Math.max(0, actualRemainingDef) };
+    const surviving = Math.max(0, actualRemainingDef);
+    // Near miss: defender survives with 1-3 units
+    if (surviving >= 1 && surviving <= 3) {
+      _lastCombatResult.wasNearMiss = true;
+    }
+    _lastCombatResult.defenderRemaining = surviving;
+    return { ...p, units: surviving };
   });
 }
 
@@ -511,6 +560,9 @@ function launchFleet(
     arc: (Math.random() - 0.5) * 130,
   });
   src.units -= sendUnits;
+  // Track aggression
+  if (owner === 1) state.playerFleetsLaunched++;
+  else state.enemyFleetsLaunched++;
 }
 
 // ── AI (upgraded: abilities, distance-weighted, border defense, expansion) ────
@@ -591,7 +643,8 @@ function scoreTarget(src: Planet, tgt: Planet, perceived: number): number {
 
 function aiTick(state: GameState, dt: number): void {
   const { difficulty } = state;
-  const fireProb = difficulty === 'easy' ? 0.0065 : difficulty === 'medium' ? 0.0156 : 0.0312;
+  const baseFireProb = difficulty === 'easy' ? 0.0065 : difficulty === 'medium' ? 0.0156 : 0.0312;
+  const fireProb = baseFireProb * state.aiCalibration;
   const threshold = difficulty === 'easy' ? 22 : difficulty === 'medium' ? 14 : 8;
 
   // AI ability usage (medium+hard only)
@@ -811,6 +864,12 @@ function tick(state: GameState, dt: number): void {
         rate *= 1 + Math.min(0.15, state.playerStreak * 0.05);
       }
 
+      // Node upgrade bonus: +10% per level
+      const nodeLevel = state.nodeLevels[p.id] || 0;
+      if (nodeLevel > 0) {
+        rate *= 1 + nodeLevel * 0.10;
+      }
+
       // Eye of Ra: +60% generation while active
       if (state.abilityActive && state.playerEmpireId === 'egypt' && p.owner === 1) {
         rate *= 1.6;
@@ -835,7 +894,9 @@ function tick(state: GameState, dt: number): void {
         rate *= 3.0;
       }
 
-      p.units = Math.min(p.units + rate * dt * 60, 999);
+      // Apply AI calibration to AI growth
+      const finalRate = p.owner === 2 ? rate * state.aiCalibration : rate;
+      p.units = Math.min(p.units + finalRate * dt * 60, 999);
     }
 
     // Ruins timer: transform to barracks after 15s of ownership
@@ -919,10 +980,55 @@ function tick(state: GameState, dt: number): void {
         : targetBefore.owner === 1 ? '68,238,102'
         : '238,51,68';
 
+      // Critical strike floating text
+      if (_lastCombatResult.wasCritical) {
+        state.floatingTexts.push({
+          id: uid(), x: targetAfter.x + (Math.random() - 0.5) * 20,
+          y: targetAfter.y - targetAfter.radius - 22,
+          text: 'CRITICAL!', color: '#FFD700',
+          t: 0, size: 16,
+        });
+      }
+
+      // Near miss floating text
+      if (_lastCombatResult.wasNearMiss && !_lastCombatResult.wasConquest) {
+        state.floatingTexts.push({
+          id: uid(), x: targetAfter.x + (Math.random() - 0.5) * 20,
+          y: targetAfter.y - targetAfter.radius - 32,
+          text: 'CLOSE!', color: '#FF9900',
+          t: 0, size: 14,
+        });
+      }
+
       const wasConquest = targetBefore.owner !== fleet.owner && targetAfter.owner === fleet.owner;
       if (wasConquest) {
-        if (fleet.owner === 1) state.playerConquestTotal++;
-        else state.enemyConquestTotal++;
+        if (fleet.owner === 1) {
+          state.playerConquestTotal++;
+          // Combo system: 5 second window to chain conquests
+          state.playerComboCount++;
+          state.playerComboTimer = 5;
+          if (state.playerComboCount > state.playerMaxCombo) {
+            state.playerMaxCombo = state.playerComboCount;
+          }
+          // Combo floating text at 3+
+          if (state.playerComboCount >= 3) {
+            state.floatingTexts.push({
+              id: uid(), x: targetAfter.x,
+              y: targetAfter.y - targetAfter.radius - 42,
+              text: `${state.playerComboCount}x COMBO!`,
+              color: state.playerComboCount >= 5 ? '#FF44FF' : '#44FFFF',
+              t: 0, size: Math.min(20, 14 + state.playerComboCount),
+            });
+          }
+        } else {
+          state.enemyConquestTotal++;
+          // Enemy conquest breaks player combo
+          state.playerComboCount = 0;
+          state.playerComboTimer = 0;
+        }
+        // Reset node hold timer on conquest
+        state.nodeHoldTimers[targetAfter.id] = 0;
+        state.nodeLevels[targetAfter.id] = 0;
         // Enhanced capture burst: 12 particles outward (8 empire color + 4 white)
         spawnParticlesPooled(targetAfter.x, targetAfter.y, attackColor, 8, 6.0, fleet.owner);
         spawnParticlesPooled(targetAfter.x, targetAfter.y, '255,255,255', 4, 7.5, 0);
@@ -1037,6 +1143,52 @@ function tick(state: GameState, dt: number): void {
         }
       }
     }
+  }
+
+  // ── Combo timer decay ────────────────────────────────────────────────────
+  if (state.playerComboTimer > 0) {
+    state.playerComboTimer -= dt;
+    if (state.playerComboTimer <= 0) {
+      state.playerComboCount = 0;
+      state.playerComboTimer = 0;
+    }
+  }
+
+  // ── Node hold timers & upgrade levels ──────────────────────────────────
+  for (const p of state.planets) {
+    if (p.owner !== 0) {
+      state.nodeHoldTimers[p.id] = (state.nodeHoldTimers[p.id] || 0) + dt;
+      const held = state.nodeHoldTimers[p.id];
+      // Level up at 20s, 45s, 75s
+      const newLevel = held >= 75 ? 3 : held >= 45 ? 2 : held >= 20 ? 1 : 0;
+      const oldLevel = state.nodeLevels[p.id] || 0;
+      if (newLevel > oldLevel) {
+        state.nodeLevels[p.id] = newLevel;
+        // Growth bonus: +10% per level
+        // (applied in growth section via nodeLevels lookup)
+        state.floatingTexts.push({
+          id: uid(), x: p.x, y: p.y - p.radius - 18,
+          text: `LV${newLevel}`, color: '#FFDD44',
+          t: 0, size: 12,
+        });
+      }
+      state.nodeLevels[p.id] = newLevel;
+    } else {
+      // Reset when neutral
+      state.nodeHoldTimers[p.id] = 0;
+      state.nodeLevels[p.id] = 0;
+    }
+  }
+
+  // ── Lead change tracking ────────────────────────────────────────────────
+  {
+    const pCount = state.planets.filter(p => p.owner === 1).length;
+    const eCount = state.planets.filter(p => p.owner === 2).length;
+    const leader: 0 | 1 | 2 = pCount > eCount ? 1 : eCount > pCount ? 2 : 0;
+    if (leader !== 0 && state._lastLeader !== 0 && leader !== state._lastLeader) {
+      state.leadChanges++;
+    }
+    if (leader !== 0) state._lastLeader = leader;
   }
 
   // ── FPS tracking ────────────────────────────────────────────────────────

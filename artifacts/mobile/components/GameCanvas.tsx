@@ -654,18 +654,61 @@ function drawUnit(c: CanvasRenderingContext2D, bx: number, by: number, angle: nu
   }
 }
 
-// ── V-Formation positions ────────────────────────────────────────────────────
-// Pre-computed formation offsets (relative to center, facing right)
-const V_FORMATION: number[][] = [
-  [0, 0],       // Lead
-  [-8, -8],     // Left wing
-  [-8, 8],      // Right wing
-  [-16, -12],   // Third row left
-  [-16, 12],    // Third row right
-  [-24, -6],    // Staggered
-  [-24, 6],
-  [-30, 0],
+// ── Formation system ─────────────────────────────────────────────────────────
+// Dynamic formations based on fleet size
+const DIAMOND_FORMATION: number[][] = [
+  [10, 0], [0, 6], [0, -6], [-10, 0],
 ];
+
+const V_FORMATION: number[][] = [
+  [14, 0],       // Lead at apex
+  [5, -7], [5, 7],
+  [-4, -14], [-4, 14],
+  [-13, -7], [-13, 7],
+  [-22, -14], [-22, 14],
+  [-22, 0],
+  [-31, -7], [-31, 7],
+];
+
+const COLUMN_FORMATION: number[][] = (() => {
+  const offsets: number[][] = [];
+  const cols = 3, spacing = 8;
+  for (let r = 0; r < 5; r++) {
+    for (let c = 0; c < cols; c++) {
+      offsets.push([10 - r * spacing, (c - 1) * spacing]);
+    }
+  }
+  return offsets;
+})();
+
+function getFormationOffsets(unitCount: number): number[][] {
+  if (unitCount <= 4) return DIAMOND_FORMATION.slice(0, unitCount);
+  if (unitCount <= 12) return V_FORMATION.slice(0, unitCount);
+  return COLUMN_FORMATION.slice(0, Math.min(unitCount, 15));
+}
+
+function lerpAngle(current: number, target: number, t: number): number {
+  let diff = target - current;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  return current + diff * t;
+}
+
+// ── Dynamic lighting helper ─────────────────────────────────────────────────
+function getLightInfluence(ux: number, uy: number, planets: Planet[]): number {
+  let maxLight = 0;
+  for (let i = 0; i < planets.length; i++) {
+    const p = planets[i];
+    if (p.owner !== 1) continue;
+    const dx = ux - p.x, dy = uy - p.y;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d < 75) {
+      const influence = 1 - (d / 75) * (d / 75);
+      if (influence > maxLight) maxLight = influence;
+    }
+  }
+  return maxLight;
+}
 
 // ── VFX Particle type ────────────────────────────────────────────────────────
 interface VFXParticle {
@@ -776,6 +819,15 @@ export default function GameCanvas({
   const selCascadeRef = useRef<number>(0);
   // Prevent double-dispatch in ALL mode (grant + release)
   const allDispatchedRef = useRef(false);
+  // Screen shake state (F3)
+  const screenShakeRef = useRef({ x: 0, y: 0, timer: 0, intensity: 0 });
+  // Fleet angle lerping (F1)
+  const fleetAngleMap = useRef<Map<number, number>>(new Map());
+  // Frame graph toggle (F14)
+  const fpsGraphVisible = useRef(false);
+  const fpsTapCount = useRef({ count: 0, lastTime: 0 });
+  // Evenly matched cooldown (F15)
+  const evenlyMatchedRef = useRef({ lastShow: 0, opacity: 0 });
 
   // Refs for latest props/state
   const stateRef = useRef(state); stateRef.current = state;
@@ -843,6 +895,15 @@ export default function GameCanvas({
       onPanResponderGrant: e => {
         const { locationX: x, locationY: y } = e.nativeEvent;
         moveRef.current(x, y);
+
+        // ── F14: Triple-tap FPS area to toggle frame graph ──
+        if (x < 70 && y < 24) {
+          const ft = fpsTapCount.current;
+          const tnow = performance.now();
+          if (tnow - ft.lastTime < 500) { ft.count++; } else { ft.count = 1; }
+          ft.lastTime = tnow;
+          if (ft.count >= 3) { fpsGraphVisible.current = !fpsGraphVisible.current; ft.count = 0; }
+        }
 
         // ── DOUBLE TAP DETECTION ──
         const now = performance.now();
@@ -1108,6 +1169,8 @@ export default function GameCanvas({
     // ── PRE-ALLOCATE departure tracking ──────────────────────────────────
     const departureTimestamps = new Map<number, number>(); // fleetFromId -> timestamp
     let lastFleetCount = 0;
+    let lastConquestFlashCount = 0;
+    let lastImpactFlashCount = 0;
 
     // ── PRE-ALLOCATE per-frame lookup structures ──────────────────────────
     const planetMap = new Map<number, Planet>();
@@ -1206,6 +1269,20 @@ export default function GameCanvas({
         incomingUnits.set(f.toId, (incomingUnits.get(f.toId) || 0) + f.units);
       }
 
+      // ── F3: Screen shake trigger — detect new conquest/impact flashes ──
+      if (conquestFlashes.length > lastConquestFlashCount) {
+        // New conquests → big shake
+        screenShakeRef.current = { x: 0, y: 0, timer: 180, intensity: 4 };
+      } else if (impactFlashes.length > lastImpactFlashCount) {
+        // New impacts → small shake (only for significant ones)
+        const newCount = impactFlashes.length - lastImpactFlashCount;
+        if (newCount >= 2) {
+          screenShakeRef.current = { x: 0, y: 0, timer: 180, intensity: 2.5 };
+        }
+      }
+      lastConquestFlashCount = conquestFlashes.length;
+      lastImpactFlashCount = impactFlashes.length;
+
       // ── Elapsed time for weather system ──
       const gameStartTime = s.gameStartTime || now;
       const elapsedMs = now - gameStartTime;
@@ -1223,6 +1300,19 @@ export default function GameCanvas({
       const aiTension = totalOwnedNodes > 0 && aiNodeCount / planets.length < 0.2;
 
       ctx.clearRect(0, 0, width, height);
+
+      // ── SCREEN MICRO-SHAKE (F3) ──────────────────────────────────────────
+      const shake = screenShakeRef.current;
+      if (shake.timer > 0) {
+        shake.timer -= dtMs;
+        const progress = Math.max(0, shake.timer / 180);
+        const freq = 3;
+        shake.x = Math.sin((1 - progress) * Math.PI * freq * 2) * shake.intensity * progress;
+        shake.y = Math.cos((1 - progress) * Math.PI * freq * 1.5) * shake.intensity * 0.6 * progress;
+        if (shake.timer <= 0) { shake.x = 0; shake.y = 0; shake.timer = 0; }
+      }
+      ctx.save();
+      ctx.translate(shake.x, shake.y);
 
       // ── Background layer (cached) ──
       ctx.drawImage(bgC!, 0, 0, width, height);
@@ -1332,6 +1422,20 @@ export default function GameCanvas({
         }
       }
 
+      // ── F4: ATMOSPHERE COLOR SHIFT (winning=amber, losing=blue) ──
+      if (planets.length > 0) {
+        const tRatio = playerNodeCount / planets.length;
+        if (tRatio > 0.70 && playerNodeCount > 0) {
+          const intensity = (tRatio - 0.70) / 0.30;
+          ctx.fillStyle = `rgba(255,180,50,${(intensity * 0.05).toFixed(3)})`;
+          ctx.fillRect(0, 0, width, height);
+        } else if (tRatio < 0.30 && aiNodeCount > 0) {
+          const intensity = (0.30 - tRatio) / 0.30;
+          ctx.fillStyle = `rgba(50,60,100,${(intensity * 0.06).toFixed(3)})`;
+          ctx.fillRect(0, 0, width, height);
+        }
+      }
+
       // ── Empire atmosphere glow ──
       if (planets.length > 0) {
         const capital = planets[0]; // Player capital is always id 0
@@ -1348,6 +1452,45 @@ export default function GameCanvas({
       // ── Fog & mirage state ──
       const fogOn = s.fogEnabled;
       const mirageActive = s.abilityActive && s.playerEmpireId === 'ptolemaic';
+
+      // ── Territory zone shading (subtle radial fills around owned nodes) ──
+      if (!degraded) {
+        for (let i = 0; i < planets.length; i++) {
+          const p = planets[i];
+          if (p.owner === 0) continue;
+          if (fogOn && p.owner !== 1 && !isVisible(p.x, p.y, planets)) continue;
+          const zoneR = p.radius + 50;
+          const zoneGrad = ctx.createRadialGradient(p.x, p.y, p.radius, p.x, p.y, zoneR);
+          const zGlow = eGlow(p.owner);
+          zoneGrad.addColorStop(0, zGlow + '0.04)');
+          zoneGrad.addColorStop(1, zGlow + '0)');
+          ctx.fillStyle = zoneGrad;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, zoneR, 0, TWO_PI);
+          ctx.fill();
+        }
+      }
+
+      // ── F5: NODE NETWORK PULSE (every ~4s, all owned nodes pulse simultaneously) ──
+      if (!degraded) {
+        const pulsePhase = (now % 4000) / 4000;
+        if (pulsePhase < 0.15) {
+          const pulseT = pulsePhase / 0.15;
+          const pulseRadius = pulseT * 28;
+          const pulseOp = (1 - pulseT) * 0.35;
+          for (let i = 0; i < planets.length; i++) {
+            const p = planets[i];
+            if (p.owner !== 1) continue;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius + pulseRadius, 0, TWO_PI);
+            ctx.strokeStyle = eColor(1);
+            ctx.lineWidth = 2;
+            ctx.globalAlpha = pulseOp;
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+          }
+        }
+      }
 
       // ── Territory connection web (glowing lines between nearby same-owner nodes) ──
       const TERRITORY_LINK_DIST = 180;
@@ -1390,7 +1533,7 @@ export default function GameCanvas({
         prevOwners.set(p.id, p.owner);
       }
       captureTrans.forEach((tr, id) => {
-        tr.t = Math.min(1, tr.t + dt);
+        tr.t = Math.min(1, tr.t + dt * 3.33); // 300ms spin (F9)
         if (tr.t >= 1) captureTrans.delete(id);
       });
 
@@ -1469,11 +1612,24 @@ export default function GameCanvas({
         ctx.globalAlpha = 1;
       }
 
-      // ── ENHANCED Impact flashes ──
+      // ── ENHANCED Impact flashes + F6 death sparks ──
       for (let i = 0; i < impactFlashes.length; i++) {
         const inf = impactFlashes[i];
         const t = inf.t;
         const eased = 1 - (1 - t) * (1 - t) * (1 - t);
+
+        // F6: Spawn 3 death micro-sparks on new impacts
+        if (t < 0.03 && !degraded) {
+          for (let ds = 0; ds < 3; ds++) {
+            const dsAngle = Math.random() * TWO_PI;
+            const dsSpeed = 40 + Math.random() * 50;
+            spawnVFX(
+              inf.x + (Math.random() - 0.5) * 10, inf.y + (Math.random() - 0.5) * 10,
+              Math.cos(dsAngle) * dsSpeed, Math.sin(dsAngle) * dsSpeed,
+              1.5 + Math.random(), 'rgba(255,200,100,1)', 250 + Math.random() * 100, 80, 'ember'
+            );
+          }
+        }
 
         // Ring shockwave: 0→35px, 200ms (t < ~0.25)
         if (t < 0.25) {
@@ -1777,9 +1933,13 @@ export default function GameCanvas({
           tensionOpacity = 0.85 + 0.15 * Math.sin(flickerPhase);
         }
 
-        // ── Draw node body with breathing ──
+        // ── Draw node body with breathing + capture spin (F9) ──
+        const capSpin = captureTrans.get(p.id);
+        const spinScaleX = capSpin ? Math.abs(Math.cos(capSpin.t * Math.PI)) : 1;
         ctx.save();
-        ctx.translate(px, py); ctx.scale(breathScale, breathScale); ctx.translate(-px, -py);
+        ctx.translate(px, py);
+        ctx.scale(breathScale * spinScaleX, breathScale);
+        ctx.translate(-px, -py);
         ctx.globalAlpha = tensionOpacity;
 
         if (p.nodeType === 'ruins') ctx.globalAlpha = 0.65 * tensionOpacity;
@@ -1852,6 +2012,32 @@ export default function GameCanvas({
 
         // Node type icon
         if (p.nodeType !== 'standard') drawNodeIcon(ctx, px, py, r, p.nodeType);
+
+        // ── Node upgrade stars (1-3 stars based on hold time) ──
+        const nodeLevel = s.nodeLevels?.[p.id] || 0;
+        if (nodeLevel > 0 && p.owner !== 0 && !enemyHidden) {
+          const starY = py + r + 10;
+          const starSpacing = 10;
+          const startX = px - ((nodeLevel - 1) * starSpacing) / 2;
+          ctx.fillStyle = '#FFD700';
+          ctx.globalAlpha = 0.85;
+          for (let star = 0; star < nodeLevel; star++) {
+            const sx = startX + star * starSpacing;
+            // Tiny 5-point star
+            ctx.beginPath();
+            for (let pt = 0; pt < 5; pt++) {
+              const angle = -Math.PI / 2 + (pt * TWO_PI) / 5;
+              const outerR = 4;
+              const innerR = 1.8;
+              ctx.lineTo(sx + Math.cos(angle) * outerR, starY + Math.sin(angle) * outerR);
+              const midAngle = angle + Math.PI / 5;
+              ctx.lineTo(sx + Math.cos(midAngle) * innerR, starY + Math.sin(midAngle) * innerR);
+            }
+            ctx.closePath();
+            ctx.fill();
+          }
+          ctx.globalAlpha = 1;
+        }
 
         // Ruins timer bar
         if (p.nodeType === 'ruins' && p.owner !== 0 && p.ruinsTimer > 0) {
@@ -2090,6 +2276,24 @@ export default function GameCanvas({
           }
         }
 
+        // ── CRITICAL FLEET GLOW (20+ units) ──
+        if (f.units >= 20 && !degraded) {
+          const pulseSize = 22 + 4 * Math.sin(now / 300 + f.id);
+          const glowOp = f.units >= 50 ? 0.25 : f.units >= 35 ? 0.18 : 0.12;
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y, pulseSize, 0, TWO_PI);
+          ctx.fillStyle = glow + glowOp.toFixed(3) + ')';
+          ctx.fill();
+          // Outer ring for massive fleets (50+)
+          if (f.units >= 50) {
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, pulseSize + 8, 0, TWO_PI);
+            ctx.strokeStyle = glow + '0.1)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
+        }
+
         // Empire-specific trails
         const maxTrail = perf.maxTrail;
         for (let t = 0; t < maxTrail; t++) {
@@ -2146,27 +2350,39 @@ export default function GameCanvas({
         gg.addColorStop(0, glow + '0.45)'); gg.addColorStop(1, glow + '0)');
         ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(pos.x, pos.y, 18, 0, TWO_PI); ctx.fill();
 
-        if (f.units <= 8) {
-          // Draw individual units in V-formation
-          const unitCount = Math.min(f.units, V_FORMATION.length);
-          for (let u = 0; u < unitCount; u++) {
-            const off = V_FORMATION[u];
-            const ux = pos.x + off[0] * cos * 0.5 - off[1] * sin * 0.5;
-            const uy = pos.y + off[0] * sin * 0.5 + off[1] * cos * 0.5;
-            // Ankh wobble
-            const unitAngle = unitShape === 'ankh'
-              ? angle + Math.sin(now / 300 + u) * 5 * DEG_TO_RAD
-              : angle;
-            drawUnit(ctx, ux, uy, unitAngle, unitShape, color);
-          }
-        } else {
-          // Draw lead unit + count badge
-          const unitAngle = unitShape === 'ankh'
-            ? angle + Math.sin(now / 300) * 5 * DEG_TO_RAD
-            : angle;
-          drawUnit(ctx, pos.x, pos.y, unitAngle, unitShape, color);
+        // ── F1: DYNAMIC FORMATIONS (diamond ≤4, V 5-12, column 13+) ──
+        // Smooth angle lerping
+        const prevAngle = fleetAngleMap.current.get(f.id);
+        const smoothAngle = prevAngle !== undefined ? lerpAngle(prevAngle, angle, 0.15) : angle;
+        fleetAngleMap.current.set(f.id, smoothAngle);
+        const fcos = Math.cos(smoothAngle), fsin = Math.sin(smoothAngle);
 
-          // Count badge: rounded rect above fleet
+        const visibleCount = Math.min(f.units, 15);
+        const formationOffsets = getFormationOffsets(visibleCount);
+
+        for (let u = 0; u < formationOffsets.length; u++) {
+          const off = formationOffsets[u];
+          const ux = pos.x + off[0] * fcos - off[1] * fsin;
+          const uy = pos.y + off[0] * fsin + off[1] * fcos;
+          const unitAngle = unitShape === 'ankh'
+            ? smoothAngle + Math.sin(now / 300 + u) * 5 * DEG_TO_RAD
+            : smoothAngle;
+          drawUnit(ctx, ux, uy, unitAngle, unitShape, color);
+
+          // F2: Dynamic lighting — warm glow near owned nodes
+          if (!degraded && f.owner === 1) {
+            const light = getLightInfluence(ux, uy, planets);
+            if (light > 0.1) {
+              ctx.globalAlpha = light * 0.3;
+              ctx.beginPath(); ctx.arc(ux, uy, 8, 0, TWO_PI);
+              ctx.fillStyle = '#FFFAE0'; ctx.fill();
+              ctx.globalAlpha = 1;
+            }
+          }
+        }
+
+        // Count badge for fleets > 15 units
+        if (f.units > 15) {
           const badgeX = pos.x - perpCos * 14;
           const badgeY = pos.y - perpSin * 14;
           const badgeW = f.units >= 100 ? 28 : f.units >= 10 ? 22 : 18;
@@ -2175,11 +2391,9 @@ export default function GameCanvas({
           ctx.roundRect(badgeX - badgeW / 2, badgeY - badgeH / 2, badgeW, badgeH, 4);
           ctx.fillStyle = 'rgba(8,6,2,0.82)'; ctx.fill();
           ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.stroke();
-          // Shadow beneath badge
           ctx.beginPath();
           ctx.roundRect(badgeX - badgeW / 2 + 1, badgeY - badgeH / 2 + 1, badgeW, badgeH, 4);
           ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fill();
-          // Number
           ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
           ctx.fillText(String(f.units), badgeX, badgeY + 3);
         }
@@ -2356,6 +2570,64 @@ export default function GameCanvas({
         ctx.fillStyle = redVig; ctx.fillRect(0, 0, width, height);
       }
 
+      // ── Combo counter HUD (top-center) ──
+      if (s.playerComboCount >= 2) {
+        const comboX = width / 2;
+        const comboY = 28;
+        const comboText = `${s.playerComboCount}x COMBO`;
+        const comboScale = 1 + 0.05 * Math.sin(now / 150);
+        const comboColor = s.playerComboCount >= 5 ? '#FF44FF' : s.playerComboCount >= 3 ? '#44FFFF' : '#FFCC44';
+        ctx.save();
+        ctx.translate(comboX, comboY);
+        ctx.scale(comboScale, comboScale);
+        ctx.translate(-comboX, -comboY);
+        ctx.font = 'bold 16px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillText(comboText, comboX + 1, comboY + 1);
+        ctx.fillStyle = comboColor;
+        ctx.globalAlpha = 0.7 + 0.3 * Math.sin(now / 200);
+        ctx.fillText(comboText, comboX, comboY);
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      }
+
+      // ── Momentum label (territory advantage indicator) ──
+      if (playerNodeCount > 0 && aiNodeCount > 0) {
+        const ratio = playerNodeCount / (playerNodeCount + aiNodeCount);
+        if (ratio > 0.65 || ratio < 0.35) {
+          const momText = ratio > 0.65 ? 'DOMINATING' : 'UNDER PRESSURE';
+          const momColor = ratio > 0.65 ? 'rgba(100,255,130,0.4)' : 'rgba(255,100,80,0.4)';
+          ctx.font = 'bold 10px sans-serif';
+          ctx.textAlign = 'right';
+          ctx.fillStyle = momColor;
+          ctx.fillText(momText, width - 8, 24);
+        }
+        // F16: Comeback/Dominant bonus labels
+        if (aiNodeCount > playerNodeCount * 1.5 && playerNodeCount > 0) {
+          ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'right';
+          ctx.fillStyle = 'rgba(100,255,130,0.5)';
+          ctx.fillText('COMEBACK +25%', width - 8, 36);
+        } else if (playerNodeCount > aiNodeCount * 1.5 && aiNodeCount > 0) {
+          ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'right';
+          ctx.fillStyle = 'rgba(255,215,0,0.4)';
+          ctx.fillText('DOMINANT', width - 8, 36);
+        }
+      }
+
+      // ── Battle stats overlay (bottom-left, subtle) ──
+      if (s.playerConquestTotal > 0 || s.enemyConquestTotal > 0) {
+        const statsX = 8;
+        const statsY = height - 8;
+        ctx.font = '9px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+        ctx.fillText(`CAP ${s.playerConquestTotal}/${s.enemyConquestTotal}`, statsX, statsY);
+        if (s.playerMaxCombo >= 3) {
+          ctx.fillText(`BEST ${s.playerMaxCombo}x`, statsX, statsY - 12);
+        }
+      }
+
       // ── FPS counter (color-coded) ──
       const fpsColor = fp.fps > 55 ? 'rgba(80,255,80,0.6)' : fp.fps >= 45 ? 'rgba(255,220,60,0.6)' : 'rgba(255,60,60,0.7)';
       const ql = perf.qualityLevel;
@@ -2365,6 +2637,49 @@ export default function GameCanvas({
         ctx.fillStyle = 'rgba(255,255,255,0.25)';
         ctx.fillText(`L${ql}`, 56, 12);
       }
+
+      // ── F15: EVENLY MATCHED text ──────────────────────────────────────────
+      const playerRatio = planets.length > 0 ? playerNodeCount / planets.length : 0;
+      const em = evenlyMatchedRef.current;
+      if (playerRatio >= 0.48 && playerRatio <= 0.52 && playerNodeCount > 0 && aiNodeCount > 0) {
+        if (now - em.lastShow > 8000) {
+          em.lastShow = now;
+          em.opacity = 1;
+        }
+      }
+      if (em.opacity > 0) {
+        const emAge = now - em.lastShow;
+        em.opacity = emAge < 1500 ? Math.min(1, emAge / 300) : Math.max(0, 1 - (emAge - 1500) / 500);
+        if (em.opacity > 0.01) {
+          ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.globalAlpha = em.opacity;
+          ctx.fillText('EVENLY MATCHED', width / 2 + 1, height / 2 - 59);
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillText('EVENLY MATCHED', width / 2, height / 2 - 60);
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      // ── F14: Performance frame graph ──────────────────────────────────────
+      if (fpsGraphVisible.current) {
+        const gx = width - 98, gy = height - 52;
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(gx, gy, 92, 48);
+        for (let i = 0; i < 60; i++) {
+          const idx = (perf.frameTimeIdx - 60 + i + 60) % 60;
+          const ms = perf.frameTimes[idx];
+          const barH = Math.min(42, (ms / 33) * 42);
+          ctx.fillStyle = ms < 16 ? '#00E676' : ms < 22 ? '#FFEB3B' : '#FF1744';
+          ctx.fillRect(gx + 2 + i * 1.5, gy + 44 - barH, 1, barH);
+        }
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 0.5;
+        ctx.beginPath(); ctx.moveTo(gx + 2, gy + 44 - 20); ctx.lineTo(gx + 90, gy + 44 - 20); ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '7px monospace'; ctx.textAlign = 'left';
+        ctx.fillText('60fps', gx + 2, gy + 44 - 21);
+      }
+
+      // ── Restore screen shake transform ────────────────────────────────────
+      ctx.restore();
 
       rafRef.current = requestAnimationFrame(frame);
     }

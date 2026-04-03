@@ -26,6 +26,9 @@ interface Props {
   playerEmpire?: EmpireConfig | null;
   nodesCaptures?: number;
   gameMode?: GameMode;
+  // F12: Match quality & playstyle
+  matchQuality?: number; // 0-5 stars
+  playstyle?: { label: string; desc: string } | null;
 }
 
 function formatTime(ms: number): string {
@@ -71,6 +74,7 @@ const jitterOffsets = Array.from({ length: JITTER_FRAMES }, () => ({
 export default function GameOverlay({
   phase, onReset, onMenu, onChangeEmpire, elapsedMs, stats, prevBestTimeMs,
   playerEmpire, nodesCaptures, gameMode = 'conquest',
+  matchQuality, playstyle,
 }: Props) {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(40)).current;
@@ -448,6 +452,33 @@ export default function GameOverlay({
             <Feather name="zap" size={14} color="#FFD700" />
             <Text style={styles.streakText}>{stats.streak} WIN STREAK</Text>
             {stats.streak >= 3 && <Text style={styles.streakBonus}>+{Math.min(15, stats.streak * 5)}% growth bonus</Text>}
+          </View>
+        )}
+
+        {/* F12: Match quality stars + playstyle badge */}
+        {(matchQuality != null && matchQuality > 0) && (
+          <View style={{ alignItems: 'center', marginTop: 8 }}>
+            <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 9, letterSpacing: 2 }}>MATCH QUALITY</Text>
+            <View style={{ flexDirection: 'row', marginTop: 4 }}>
+              {[1, 2, 3, 4, 5].map(i => (
+                <Text key={i} style={{
+                  fontSize: 16, marginHorizontal: 1,
+                  color: i <= (matchQuality ?? 0) ? '#FFD700' : 'rgba(255,210,80,0.15)',
+                  textShadowColor: i <= (matchQuality ?? 0) ? 'rgba(255,215,0,0.6)' : 'transparent',
+                  textShadowRadius: 6,
+                }}>{i <= (matchQuality ?? 0) ? '\u2605' : '\u2606'}</Text>
+              ))}
+            </View>
+          </View>
+        )}
+        {playstyle && (
+          <View style={{ alignItems: 'center', marginTop: 6 }}>
+            <Text style={{ color: accentColor || '#FFD700', fontSize: 13, fontWeight: 'bold', letterSpacing: 2 }}>
+              {playstyle.label}
+            </Text>
+            <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 10, fontStyle: 'italic', marginTop: 2 }}>
+              {playstyle.desc}
+            </Text>
           </View>
         )}
 
