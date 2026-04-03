@@ -1228,6 +1228,23 @@ function tick(state: GameState, dt: number): void {
     }
   }
 
+  // Domination mode — control 75% of all nodes to win
+  if (state.gameMode === 'domination') {
+    const total = state.planets.length;
+    if (total > 0) {
+      if (playerPlanets.length >= Math.ceil(total * 0.75)) {
+        state.phase = 'won';
+        state.gameEndTime = Date.now();
+        return;
+      }
+      if (enemyPlanets.length >= Math.ceil(total * 0.75)) {
+        state.phase = 'lost';
+        state.gameEndTime = Date.now();
+        return;
+      }
+    }
+  }
+
   // Standard elimination check
   if (playerPlanets.length === 0 && playerFleets === 0) {
     state.phase = 'lost';

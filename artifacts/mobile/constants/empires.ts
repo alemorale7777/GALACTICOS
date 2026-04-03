@@ -15,7 +15,7 @@ export type NodeShape = 'pyramid' | 'colosseum' | 'yurt' | 'sphinx' | 'torii' | 
 export type UnitShape = 'scarab' | 'shield' | 'horse' | 'ankh' | 'katana' | 'viking_ship' | 'warrior' | 'immortal' | 'janissary' | 'han_soldier';
 export type AbilityId = 'eye_of_ra' | 'testudo' | 'blitz_ride' | 'mirage' | 'bushido' | 'berserker_rage' | 'blood_sacrifice' | 'immortal_legion' | 'grand_bazaar' | 'great_wall';
 export type MapSize = 'small' | 'medium' | 'large';
-export type GameMode = 'conquest' | 'regicide';
+export type GameMode = 'conquest' | 'regicide' | 'domination';
 
 export interface AbilityConfig {
   id: AbilityId;

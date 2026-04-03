@@ -1594,6 +1594,42 @@ export default function GameCanvas({
           }
         }
 
+        // ── CONQUEST SHOCKWAVE — massive expanding ring across screen ──
+        {
+          const shockMaxR = 180; // covers most of screen
+          const shockR = t * shockMaxR;
+          const shockOp = Math.max(0, (1 - t * t) * 0.25);
+          if (shockOp > 0.01) {
+            // Outer shockwave ring
+            ctx.beginPath();
+            ctx.arc(cf.x, cf.y, shockR, 0, TWO_PI);
+            ctx.strokeStyle = eColor(cf.owner);
+            ctx.lineWidth = 3 * (1 - t);
+            ctx.globalAlpha = shockOp;
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+            // Inner bright ring (tighter, faster)
+            const innerR = t * shockMaxR * 0.6;
+            const innerOp = Math.max(0, (1 - t) * 0.4);
+            if (innerOp > 0.01) {
+              ctx.beginPath();
+              ctx.arc(cf.x, cf.y, innerR, 0, TWO_PI);
+              ctx.strokeStyle = 'rgba(255,255,255,' + innerOp.toFixed(3) + ')';
+              ctx.lineWidth = 2 * (1 - t);
+              ctx.stroke();
+            }
+            // Fill flash that fades fast
+            if (t < 0.2) {
+              const fillOp = (1 - t / 0.2) * 0.12;
+              const fillGrad = ctx.createRadialGradient(cf.x, cf.y, 0, cf.x, cf.y, shockR);
+              fillGrad.addColorStop(0, eGlow(cf.owner) + fillOp.toFixed(3) + ')');
+              fillGrad.addColorStop(1, eGlow(cf.owner) + '0)');
+              ctx.fillStyle = fillGrad;
+              ctx.beginPath(); ctx.arc(cf.x, cf.y, shockR, 0, TWO_PI); ctx.fill();
+            }
+          }
+        }
+
         // Original ring effects (kept for continuous visual)
         const eased = 1 - (1 - t) * (1 - t);
         const ringIdx = i % 3;
@@ -1618,17 +1654,37 @@ export default function GameCanvas({
         const t = inf.t;
         const eased = 1 - (1 - t) * (1 - t) * (1 - t);
 
-        // F6: Spawn 3 death micro-sparks on new impacts
+        // ── CLASH ANIMATION: sparks spray + shield flash on impact ──
         if (t < 0.03 && !degraded) {
-          for (let ds = 0; ds < 3; ds++) {
+          // 6 bright clash sparks (white-hot, fast, fan outward)
+          for (let ds = 0; ds < 6; ds++) {
             const dsAngle = Math.random() * TWO_PI;
-            const dsSpeed = 40 + Math.random() * 50;
+            const dsSpeed = 60 + Math.random() * 80;
             spawnVFX(
-              inf.x + (Math.random() - 0.5) * 10, inf.y + (Math.random() - 0.5) * 10,
+              inf.x + (Math.random() - 0.5) * 8, inf.y + (Math.random() - 0.5) * 8,
               Math.cos(dsAngle) * dsSpeed, Math.sin(dsAngle) * dsSpeed,
-              1.5 + Math.random(), 'rgba(255,200,100,1)', 250 + Math.random() * 100, 80, 'ember'
+              2 + Math.random() * 1.5, 'rgba(255,240,180,1)', 300 + Math.random() * 150, 0, 'spark'
             );
           }
+          // 4 embers with gravity (metal fragments falling)
+          for (let ds = 0; ds < 4; ds++) {
+            const dsAngle = Math.random() * TWO_PI;
+            const dsSpeed = 30 + Math.random() * 40;
+            spawnVFX(
+              inf.x + (Math.random() - 0.5) * 12, inf.y + (Math.random() - 0.5) * 12,
+              Math.cos(dsAngle) * dsSpeed, Math.sin(dsAngle) * dsSpeed - 20,
+              1.5 + Math.random(), 'rgba(255,160,60,1)', 400 + Math.random() * 200, 100, 'ember'
+            );
+          }
+        }
+        // Shield flash — bright white disc at point of impact
+        if (t < 0.08) {
+          const shieldOp = (1 - t / 0.08) * 0.7;
+          const shieldR = 12 + t / 0.08 * 8;
+          ctx.beginPath();
+          ctx.arc(inf.x, inf.y, shieldR, 0, TWO_PI);
+          ctx.fillStyle = 'rgba(255,255,255,' + shieldOp.toFixed(3) + ')';
+          ctx.fill();
         }
 
         // Ring shockwave: 0→35px, 200ms (t < ~0.25)
@@ -1822,25 +1878,60 @@ export default function GameCanvas({
         const breathPhase = now / 1600 + p.id * 0.3;
         const breathScale = 0.97 + 0.03 * (1 + Math.sin(breathPhase));
 
-        // ── ENHANCED NODE GLOW SYSTEM ──
+        // ── NODE POWER AURA (intensity scales with unit count) ──
         if (p.owner !== 0 && !enemyHidden) {
-          const glowBreath = 0.5 + 0.5 * Math.sin(now / 1400 + p.id * 0.72);
+          // Power factor: 0 (empty) → 1 (99+ units)
+          const powerFactor = Math.min(1, p.units / 80);
+          // Pulse speed increases with power (calm → aggressive)
+          const pulseSpeed = 2200 - powerFactor * 1400; // 2200ms → 800ms
+          const glowBreath = 0.5 + 0.5 * Math.sin(now / pulseSpeed + p.id * 0.72);
+          // Aura radius grows with units
+          const auraRadius = r + 10 + powerFactor * 20;
+          // Opacity intensifies with units
+          const baseGlowOp = 0.08 + powerFactor * 0.22;
           // Radial fill glow behind node
-          const fillGlow = ctx.createRadialGradient(px, py, r * 0.3, px, py, r + 16);
-          fillGlow.addColorStop(0, glow + (0.18 * (0.7 + 0.3 * glowBreath)).toFixed(3) + ')');
+          const fillGlow = ctx.createRadialGradient(px, py, r * 0.2, px, py, auraRadius);
+          fillGlow.addColorStop(0, glow + (baseGlowOp * (0.7 + 0.3 * glowBreath)).toFixed(3) + ')');
           fillGlow.addColorStop(1, glow + '0)');
-          ctx.fillStyle = fillGlow; ctx.beginPath(); ctx.arc(px, py, r + 16, 0, TWO_PI); ctx.fill();
-          // Glow rings
-          const glowRings = degraded ? 1 : 3;
+          ctx.fillStyle = fillGlow; ctx.beginPath(); ctx.arc(px, py, auraRadius, 0, TWO_PI); ctx.fill();
+          // Glow rings — more and brighter with power
+          const glowRings = degraded ? 1 : (powerFactor > 0.5 ? 4 : 3);
           for (let gr = 0; gr < glowRings; gr++) {
-            const ringOffset = (gr + 1) * 5;
-            const ringOp = [0.32, 0.18, 0.10][gr] * (0.7 + 0.3 * glowBreath);
-            const ringStroke = [2.0, 1.2, 0.6][gr];
+            const ringOffset = (gr + 1) * (4 + powerFactor * 2);
+            const ringOp = (0.15 + powerFactor * 0.2) / (gr + 1) * (0.7 + 0.3 * glowBreath);
+            const ringStroke = (2.0 + powerFactor) / (gr * 0.5 + 1);
             ctx.beginPath();
             ctx.arc(px, py, r + ringOffset, 0, TWO_PI);
             ctx.strokeStyle = glow + ringOp.toFixed(3) + ')';
             ctx.lineWidth = ringStroke;
             ctx.stroke();
+          }
+          // Energy arcs for powerful nodes (40+) — more frequent as power grows
+          if (p.units >= 40 && !degraded) {
+            const arcFreq = 4000 - powerFactor * 2500; // 4s → 1.5s cycle
+            const arcPhase = (now % arcFreq) / arcFreq;
+            if (arcPhase < 0.15) {
+              const arcT = arcPhase / 0.15;
+              for (let arc = 0; arc < (powerFactor > 0.7 ? 3 : 2); arc++) {
+                const arcAngle = (p.id * 1.7 + arc * 2.1 + now * 0.004) % TWO_PI;
+                const arcR1 = r + 2;
+                const arcR2 = r + 8 + powerFactor * 10;
+                const arcCp = r + 15 + powerFactor * 8;
+                ctx.beginPath();
+                ctx.moveTo(px + Math.cos(arcAngle) * arcR1, py + Math.sin(arcAngle) * arcR1);
+                ctx.quadraticCurveTo(
+                  px + Math.cos(arcAngle + 0.3) * arcCp,
+                  py + Math.sin(arcAngle + 0.3) * arcCp,
+                  px + Math.cos(arcAngle + 0.6) * arcR2,
+                  py + Math.sin(arcAngle + 0.6) * arcR2
+                );
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1 + powerFactor;
+                ctx.globalAlpha = (0.4 + powerFactor * 0.3) * (1 - arcT);
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+              }
+            }
           }
         } else {
           // Original halo for neutral/hidden
@@ -2294,61 +2385,69 @@ export default function GameCanvas({
           }
         }
 
-        // Empire-specific trails
-        const maxTrail = perf.maxTrail;
-        for (let t = 0; t < maxTrail; t++) {
-          const tp = bezPt(Math.max(0, f.progress - (t + 1) * 0.06), from.x, from.y, cpx, cpy, to.x, to.y);
-          const trailOp = (0.35 - t * 0.12);
-          if (unitShape === 'scarab') {
-            // Golden sparkle dots
-            ctx.beginPath(); ctx.arc(tp.x + (Math.random() - 0.5) * 3, tp.y + (Math.random() - 0.5) * 3, 2 - t * 0.5, 0, TWO_PI);
-            ctx.fillStyle = `rgba(255,215,0,${trailOp.toFixed(2)})`; ctx.fill();
-          } else if (unitShape === 'shield') {
-            // Silver streak, straight line
-            ctx.beginPath(); ctx.arc(tp.x, tp.y, 3 - t, 0, TWO_PI);
-            ctx.fillStyle = `rgba(192,192,192,${trailOp.toFixed(2)})`; ctx.fill();
-          } else if (unitShape === 'horse') {
-            // Orange dust cloud (soft circles)
-            ctx.beginPath(); ctx.arc(tp.x, tp.y, 5 - t * 1.5, 0, TWO_PI);
-            ctx.fillStyle = `rgba(204,119,34,${(trailOp * 0.5).toFixed(2)})`; ctx.fill();
-          } else if (unitShape === 'ankh') {
-            // Teal glow dots
-            ctx.beginPath(); ctx.arc(tp.x, tp.y, 2.5 - t * 0.6, 0, TWO_PI);
-            ctx.fillStyle = `rgba(34,170,170,${trailOp.toFixed(2)})`; ctx.fill();
-          } else if (unitShape === 'katana') {
-            // Cherry blossom petals / crimson slash
-            ctx.beginPath(); ctx.arc(tp.x + (Math.random() - 0.5) * 4, tp.y + (Math.random() - 0.5) * 4, 2 - t * 0.5, 0, TWO_PI);
-            ctx.fillStyle = `rgba(255,182,193,${(trailOp * 0.7).toFixed(2)})`; ctx.fill();
-          } else if (unitShape === 'viking_ship') {
-            // Frost crystals
-            ctx.beginPath(); ctx.arc(tp.x + (Math.random() - 0.5) * 3, tp.y + (Math.random() - 0.5) * 3, 2 - t * 0.5, 0, TWO_PI);
-            ctx.fillStyle = `rgba(79,195,247,${trailOp.toFixed(2)})`; ctx.fill();
-          } else if (unitShape === 'warrior') {
-            // Jade green + red embers
-            ctx.beginPath(); ctx.arc(tp.x, tp.y, 2.5 - t * 0.6, 0, TWO_PI);
-            ctx.fillStyle = `rgba(76,175,80,${trailOp.toFixed(2)})`; ctx.fill();
-          } else if (unitShape === 'immortal') {
-            // Purple royal smoke
-            ctx.beginPath(); ctx.arc(tp.x, tp.y, 3 - t, 0, TWO_PI);
-            ctx.fillStyle = `rgba(123,31,162,${(trailOp * 0.6).toFixed(2)})`; ctx.fill();
-          } else if (unitShape === 'janissary') {
-            // Crimson + turquoise sparks
-            ctx.beginPath(); ctx.arc(tp.x, tp.y, 2 - t * 0.5, 0, TWO_PI);
-            ctx.fillStyle = `rgba(183,28,28,${trailOp.toFixed(2)})`; ctx.fill();
-          } else if (unitShape === 'han_soldier') {
-            // Yellow imperial sparks + red ribbon
-            ctx.beginPath(); ctx.arc(tp.x, tp.y, 2 - t * 0.5, 0, TWO_PI);
-            ctx.fillStyle = `rgba(253,216,53,${trailOp.toFixed(2)})`; ctx.fill();
-          } else {
-            ctx.beginPath(); ctx.arc(tp.x, tp.y, 4 - t * 1.2, 0, TWO_PI);
-            ctx.fillStyle = glow + `${trailOp.toFixed(2)})`; ctx.fill();
+        // ── COMET-TAIL ENGINE TRAIL (continuous glowing trail) ──
+        if (!degraded) {
+          const trailSteps = Math.min(8, Math.max(3, Math.floor(f.units / 4)));
+          const trailSpacing = 0.025;
+          // Wider trail for bigger fleets
+          const trailWidth = Math.min(8, 2 + f.units * 0.08);
+          ctx.beginPath();
+          // Build trail path (thick to thin)
+          for (let t = 0; t < trailSteps; t++) {
+            const tp = bezPt(Math.max(0, f.progress - (t + 1) * trailSpacing),
+              from.x, from.y, cpx, cpy, to.x, to.y);
+            const ta = bezAngle(Math.max(0.001, f.progress - (t + 1) * trailSpacing),
+              from.x, from.y, cpx, cpy, to.x, to.y);
+            const tPerp = ta + Math.PI / 2;
+            const fade = 1 - t / trailSteps;
+            const w = trailWidth * fade;
+            if (t === 0) {
+              ctx.moveTo(tp.x + Math.cos(tPerp) * w, tp.y + Math.sin(tPerp) * w);
+            } else {
+              ctx.lineTo(tp.x + Math.cos(tPerp) * w, tp.y + Math.sin(tPerp) * w);
+            }
           }
+          // Return along other side
+          for (let t = trailSteps - 1; t >= 0; t--) {
+            const tp = bezPt(Math.max(0, f.progress - (t + 1) * trailSpacing),
+              from.x, from.y, cpx, cpy, to.x, to.y);
+            const ta = bezAngle(Math.max(0.001, f.progress - (t + 1) * trailSpacing),
+              from.x, from.y, cpx, cpy, to.x, to.y);
+            const tPerp = ta + Math.PI / 2;
+            const fade = 1 - t / trailSteps;
+            const w = trailWidth * fade;
+            ctx.lineTo(tp.x - Math.cos(tPerp) * w, tp.y - Math.sin(tPerp) * w);
+          }
+          ctx.closePath();
+          // Gradient from bright at front to transparent at back
+          const tailEnd = bezPt(Math.max(0, f.progress - trailSteps * trailSpacing),
+            from.x, from.y, cpx, cpy, to.x, to.y);
+          const tGrad = ctx.createLinearGradient(pos.x, pos.y, tailEnd.x, tailEnd.y);
+          const baseOp = Math.min(0.5, 0.15 + f.units * 0.005);
+          tGrad.addColorStop(0, glow + baseOp.toFixed(3) + ')');
+          tGrad.addColorStop(1, glow + '0)');
+          ctx.fillStyle = tGrad;
+          ctx.fill();
+          // Bright core line
+          ctx.beginPath();
+          ctx.moveTo(pos.x, pos.y);
+          for (let t = 0; t < trailSteps; t++) {
+            const tp = bezPt(Math.max(0, f.progress - (t + 1) * trailSpacing),
+              from.x, from.y, cpx, cpy, to.x, to.y);
+            ctx.lineTo(tp.x, tp.y);
+          }
+          ctx.strokeStyle = glow + (baseOp * 0.7).toFixed(3) + ')';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
         }
 
-        // Glow
-        const gg = ctx.createRadialGradient(pos.x, pos.y, 2, pos.x, pos.y, 18);
-        gg.addColorStop(0, glow + '0.45)'); gg.addColorStop(1, glow + '0)');
-        ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(pos.x, pos.y, 18, 0, TWO_PI); ctx.fill();
+        // Fleet glow aura (scales with size)
+        const glowR = Math.min(28, 12 + f.units * 0.2);
+        const glowOp = Math.min(0.5, 0.25 + f.units * 0.004);
+        const gg = ctx.createRadialGradient(pos.x, pos.y, 2, pos.x, pos.y, glowR);
+        gg.addColorStop(0, glow + glowOp.toFixed(3) + ')');
+        gg.addColorStop(1, glow + '0)');
+        ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(pos.x, pos.y, glowR, 0, TWO_PI); ctx.fill();
 
         // ── F1: DYNAMIC FORMATIONS (diamond ≤4, V 5-12, column 13+) ──
         // Smooth angle lerping
@@ -2570,63 +2669,7 @@ export default function GameCanvas({
         ctx.fillStyle = redVig; ctx.fillRect(0, 0, width, height);
       }
 
-      // ── Combo counter HUD (top-center) ──
-      if (s.playerComboCount >= 2) {
-        const comboX = width / 2;
-        const comboY = 28;
-        const comboText = `${s.playerComboCount}x COMBO`;
-        const comboScale = 1 + 0.05 * Math.sin(now / 150);
-        const comboColor = s.playerComboCount >= 5 ? '#FF44FF' : s.playerComboCount >= 3 ? '#44FFFF' : '#FFCC44';
-        ctx.save();
-        ctx.translate(comboX, comboY);
-        ctx.scale(comboScale, comboScale);
-        ctx.translate(-comboX, -comboY);
-        ctx.font = 'bold 16px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        ctx.fillText(comboText, comboX + 1, comboY + 1);
-        ctx.fillStyle = comboColor;
-        ctx.globalAlpha = 0.7 + 0.3 * Math.sin(now / 200);
-        ctx.fillText(comboText, comboX, comboY);
-        ctx.globalAlpha = 1;
-        ctx.restore();
-      }
-
-      // ── Momentum label (territory advantage indicator) ──
-      if (playerNodeCount > 0 && aiNodeCount > 0) {
-        const ratio = playerNodeCount / (playerNodeCount + aiNodeCount);
-        if (ratio > 0.65 || ratio < 0.35) {
-          const momText = ratio > 0.65 ? 'DOMINATING' : 'UNDER PRESSURE';
-          const momColor = ratio > 0.65 ? 'rgba(100,255,130,0.4)' : 'rgba(255,100,80,0.4)';
-          ctx.font = 'bold 10px sans-serif';
-          ctx.textAlign = 'right';
-          ctx.fillStyle = momColor;
-          ctx.fillText(momText, width - 8, 24);
-        }
-        // F16: Comeback/Dominant bonus labels
-        if (aiNodeCount > playerNodeCount * 1.5 && playerNodeCount > 0) {
-          ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'right';
-          ctx.fillStyle = 'rgba(100,255,130,0.5)';
-          ctx.fillText('COMEBACK +25%', width - 8, 36);
-        } else if (playerNodeCount > aiNodeCount * 1.5 && aiNodeCount > 0) {
-          ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'right';
-          ctx.fillStyle = 'rgba(255,215,0,0.4)';
-          ctx.fillText('DOMINANT', width - 8, 36);
-        }
-      }
-
-      // ── Battle stats overlay (bottom-left, subtle) ──
-      if (s.playerConquestTotal > 0 || s.enemyConquestTotal > 0) {
-        const statsX = 8;
-        const statsY = height - 8;
-        ctx.font = '9px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillStyle = 'rgba(255,255,255,0.25)';
-        ctx.fillText(`CAP ${s.playerConquestTotal}/${s.enemyConquestTotal}`, statsX, statsY);
-        if (s.playerMaxCombo >= 3) {
-          ctx.fillText(`BEST ${s.playerMaxCombo}x`, statsX, statsY - 12);
-        }
-      }
+      // (Text HUD clutter removed — game communicates via visuals now)
 
       // ── FPS counter (color-coded) ──
       const fpsColor = fp.fps > 55 ? 'rgba(80,255,80,0.6)' : fp.fps >= 45 ? 'rgba(255,220,60,0.6)' : 'rgba(255,60,60,0.7)';
@@ -2638,27 +2681,7 @@ export default function GameCanvas({
         ctx.fillText(`L${ql}`, 56, 12);
       }
 
-      // ── F15: EVENLY MATCHED text ──────────────────────────────────────────
-      const playerRatio = planets.length > 0 ? playerNodeCount / planets.length : 0;
-      const em = evenlyMatchedRef.current;
-      if (playerRatio >= 0.48 && playerRatio <= 0.52 && playerNodeCount > 0 && aiNodeCount > 0) {
-        if (now - em.lastShow > 8000) {
-          em.lastShow = now;
-          em.opacity = 1;
-        }
-      }
-      if (em.opacity > 0) {
-        const emAge = now - em.lastShow;
-        em.opacity = emAge < 1500 ? Math.min(1, emAge / 300) : Math.max(0, 1 - (emAge - 1500) / 500);
-        if (em.opacity > 0.01) {
-          ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'center';
-          ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.globalAlpha = em.opacity;
-          ctx.fillText('EVENLY MATCHED', width / 2 + 1, height / 2 - 59);
-          ctx.fillStyle = '#FFFFFF';
-          ctx.fillText('EVENLY MATCHED', width / 2, height / 2 - 60);
-          ctx.globalAlpha = 1;
-        }
-      }
+      // (Evenly matched text removed — replaced by visual territory aura)
 
       // ── F14: Performance frame graph ──────────────────────────────────────
       if (fpsGraphVisible.current) {

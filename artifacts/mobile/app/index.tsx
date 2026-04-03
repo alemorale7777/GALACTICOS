@@ -791,24 +791,7 @@ export default function GameApp() {
         </Animated.View>
       )}
 
-      {/* F7: Pre-game matchup analysis overlay */}
-      {showMatchup && (
-        <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', opacity: matchupOpacity }]}>
-          <TouchableOpacity activeOpacity={0.8} onPress={() => setShowMatchup(false)} style={{
-            backgroundColor: 'rgba(8,8,20,0.92)', borderRadius: 16,
-            borderWidth: 1, borderColor: 'rgba(255,215,0,0.30)',
-            paddingHorizontal: 28, paddingVertical: 20, alignItems: 'center', maxWidth: 320,
-          }}>
-            <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, letterSpacing: 3 }}>MATCHUP ANALYSIS</Text>
-            <Text style={{ color: 'rgba(255,215,0,0.8)', fontSize: 15, marginTop: 10, fontWeight: 'bold', textAlign: 'center' }}>
-              {getMatchupInfo().type}
-            </Text>
-            <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 8, textAlign: 'center', fontStyle: 'italic' }}>
-              {getMatchupInfo().tip}
-            </Text>
-          </TouchableOpacity>
-        </Animated.View>
-      )}
+      {/* (Matchup overlay removed — game communicates via visuals) */}
     </View>
   );
 }

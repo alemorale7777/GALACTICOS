@@ -29,6 +29,7 @@ export default function MapSizeSelect({ onSelect, onBack }: Props) {
   const bottomInset = Platform.OS === 'web' ? 34 : insets.bottom;
 
   const [gameMode, setGameMode] = useState<GameMode>('conquest');
+  const dominationScale = useRef(new Animated.Value(1)).current;
 
   const headerAnim = useRef(new Animated.Value(0)).current;
   const cardAnims = useRef(MAP_SIZES.map(() => new Animated.Value(0))).current;
@@ -60,7 +61,7 @@ export default function MapSizeSelect({ onSelect, onBack }: Props) {
   const handleModeSelect = (mode: GameMode) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setGameMode(mode);
-    const scaleRef = mode === 'conquest' ? conquestScale : regicideScale;
+    const scaleRef = mode === 'conquest' ? conquestScale : mode === 'regicide' ? regicideScale : dominationScale;
     Animated.sequence([
       Animated.timing(scaleRef, { toValue: 0.93, duration: 60, useNativeDriver: true }),
       Animated.spring(scaleRef, { toValue: 1, tension: 300, friction: 8, useNativeDriver: true }),
@@ -68,6 +69,7 @@ export default function MapSizeSelect({ onSelect, onBack }: Props) {
   };
 
   const isConquest = gameMode === 'conquest';
+  const isDomination = gameMode === 'domination';
 
   return (
     <View style={[styles.root, { paddingTop: topInset + 10, paddingBottom: bottomInset + 10 }]}>
@@ -168,21 +170,43 @@ export default function MapSizeSelect({ onSelect, onBack }: Props) {
             <TouchableOpacity
               style={[
                 styles.modeCard,
-                !isConquest && styles.modeCardActive,
-                !isConquest && { borderColor: '#EE3344' },
+                gameMode === 'regicide' && styles.modeCardActive,
+                gameMode === 'regicide' && { borderColor: '#EE3344' },
               ]}
               onPress={() => handleModeSelect('regicide')}
               activeOpacity={0.8}>
               <View style={styles.modeIconRow}>
                 <Text style={{ fontSize: 18 }}>👑</Text>
-                {!isConquest && (
+                {gameMode === 'regicide' && (
                   <View style={styles.intenseBadge}>
                     <Text style={styles.intenseText}>INTENSE</Text>
                   </View>
                 )}
               </View>
-              <Text style={[styles.modeTitle, !isConquest && { color: '#EE3344' }]}>REGICIDE</Text>
+              <Text style={[styles.modeTitle, gameMode === 'regicide' && { color: '#EE3344' }]}>REGICIDE</Text>
               <Text style={styles.modeDesc}>Strike down the enemy King for instant victory</Text>
+            </TouchableOpacity>
+          </Animated.View>
+
+          <Animated.View style={{ flex: 1, transform: [{ scale: dominationScale }] }}>
+            <TouchableOpacity
+              style={[
+                styles.modeCard,
+                isDomination && styles.modeCardActive,
+                isDomination && { borderColor: '#AA44FF' },
+              ]}
+              onPress={() => handleModeSelect('domination')}
+              activeOpacity={0.8}>
+              <View style={styles.modeIconRow}>
+                <Feather name="globe" size={20} color={isDomination ? '#AA44FF' : 'rgba(170,68,255,0.3)'} />
+                {isDomination && (
+                  <View style={[styles.intenseBadge, { backgroundColor: 'rgba(170,68,255,0.15)' }]}>
+                    <Text style={[styles.intenseText, { color: '#AA44FF' }]}>EPIC</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[styles.modeTitle, isDomination && { color: '#AA44FF' }]}>DOMINATION</Text>
+              <Text style={styles.modeDesc}>Control 75% of nodes to dominate</Text>
             </TouchableOpacity>
           </Animated.View>
         </View>
@@ -192,7 +216,9 @@ export default function MapSizeSelect({ onSelect, onBack }: Props) {
       <Text style={styles.modeDescription}>
         {gameMode === 'conquest'
           ? 'Capture all enemy territory to claim victory'
-          : 'Strike down the enemy King for instant victory'}
+          : gameMode === 'regicide'
+          ? 'Strike down the enemy King for instant victory'
+          : 'Control 75% of all nodes to achieve domination'}
       </Text>
     </View>
   );

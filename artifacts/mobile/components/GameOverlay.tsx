@@ -360,8 +360,8 @@ export default function GameOverlay({
                 },
           ]}>
             {isWin
-              ? (gameMode === 'regicide' ? 'REGICIDE!' : 'CONQUEST COMPLETE')
-              : (gameMode === 'regicide' ? 'YOUR KING HAS FALLEN' : 'CONQUERED')}
+              ? (gameMode === 'regicide' ? 'REGICIDE!' : gameMode === 'domination' ? 'TOTAL DOMINATION!' : 'CONQUEST COMPLETE')
+              : (gameMode === 'regicide' ? 'YOUR KING HAS FALLEN' : gameMode === 'domination' ? 'DOMINATED' : 'CONQUERED')}
           </Text>
         </Animated.View>
 
