@@ -1,6 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  Dimensions,
   Platform,
   ScrollView,
   StyleSheet,
@@ -428,7 +429,7 @@ function LeaderCard({
 
       {/* Emblem with glow */}
       <View style={[styles.emblemWrap, { backgroundColor: empire.cardAccent + '18' }]}>
-        {EMBLEM_RENDERERS[empire.id](64, empire.cardAccent)}
+        {EMBLEM_RENDERERS[empire.id](80, empire.cardAccent)}
       </View>
 
       {/* Empire & Leader */}
@@ -467,7 +468,10 @@ function LeaderCard({
   );
 }
 
-// ── Main screen ───────────────────────────────────────────────────────────────
+// ── Main screen (horizontal carousel) ────────────────────────────────────────
+const SCREEN_W = Dimensions.get('window').width;
+const CARD_W = SCREEN_W - 48; // 24px padding each side
+
 export default function LeaderSelect({ onSelect, onBack, empireMastery }: Props) {
   const insets = useSafeAreaInsets();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
@@ -475,6 +479,8 @@ export default function LeaderSelect({ onSelect, onBack, empireMastery }: Props)
 
   const headerAnim = useRef(new Animated.Value(0)).current;
   const cardAnims = useRef(EMPIRE_IDS.map(() => new Animated.Value(0))).current;
+  const [activeIdx, setActiveIdx] = useState(0);
+  const bgTintAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(headerAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
@@ -485,8 +491,27 @@ export default function LeaderSelect({ onSelect, onBack, empireMastery }: Props)
     });
   }, []);
 
+  // Animate background tint on swipe
+  useEffect(() => {
+    Animated.timing(bgTintAnim, { toValue: activeIdx, duration: 300, useNativeDriver: false }).start();
+  }, [activeIdx]);
+
+  const handleScroll = (e: any) => {
+    const offset = e.nativeEvent.contentOffset.x;
+    const idx = Math.round(offset / (CARD_W + 12));
+    if (idx >= 0 && idx < EMPIRE_IDS.length && idx !== activeIdx) {
+      setActiveIdx(idx);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
+
+  const activeEmpire = EMPIRE_CONFIG[EMPIRE_IDS[activeIdx]];
+
   return (
     <View style={[styles.root, { paddingTop: topInset, paddingBottom: bottomInset }]}>
+      {/* Background color tint */}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: EMPIRE_CARD_BG[EMPIRE_IDS[activeIdx]], opacity: 0.5 }]} />
+
       {/* Back button */}
       {onBack && (
         <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.7}>
@@ -503,23 +528,43 @@ export default function LeaderSelect({ onSelect, onBack, empireMastery }: Props)
         <Text style={styles.headerSub}>CHOOSE YOUR</Text>
         <Text style={styles.headerTitle}>EMPIRE</Text>
         <View style={styles.headerAccent} />
-        <Text style={styles.headerHint}>Your opponent will be randomly assigned</Text>
+        <Text style={styles.headerHint}>Swipe to browse — tap SELECT to fight</Text>
       </Animated.View>
 
-      {/* 2×2 grid */}
+      {/* Horizontal carousel */}
       <ScrollView
-        contentContainerStyle={styles.grid}
-        showsVerticalScrollIndicator={false}>
+        horizontal
+        pagingEnabled={false}
+        snapToInterval={CARD_W + 12}
+        snapToAlignment="center"
+        decelerationRate="fast"
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 24, gap: 12, paddingBottom: 12 }}
+        onMomentumScrollEnd={handleScroll}
+        onScrollEndDrag={handleScroll}
+        style={{ flex: 1 }}
+      >
         {EMPIRE_IDS.map((id, i) => (
-          <LeaderCard
-            key={id}
-            empire={EMPIRE_CONFIG[id]}
-            anim={cardAnims[i]}
-            onSelect={() => onSelect(id)}
-            masteryLevel={empireMastery?.[id]}
-          />
+          <View key={id} style={{ width: CARD_W }}>
+            <LeaderCard
+              empire={EMPIRE_CONFIG[id]}
+              anim={cardAnims[i]}
+              onSelect={() => onSelect(id)}
+              masteryLevel={empireMastery?.[id]}
+            />
+          </View>
         ))}
       </ScrollView>
+
+      {/* Page indicator dots */}
+      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, paddingBottom: 8 }}>
+        {EMPIRE_IDS.map((id, i) => (
+          <View key={id} style={{
+            width: i === activeIdx ? 16 : 6, height: 6, borderRadius: 3,
+            backgroundColor: i === activeIdx ? (activeEmpire?.cardAccent || '#FFD700') : 'rgba(255,255,255,0.15)',
+          }} />
+        ))}
+      </View>
     </View>
   );
 }
@@ -561,29 +606,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   card: {
-    width: '47%',
+    width: '100%',
     backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 16, borderWidth: 1.5,
-    paddingVertical: 14, paddingHorizontal: 10,
-    alignItems: 'center', gap: 5,
+    borderRadius: 20, borderWidth: 1.5,
+    paddingVertical: 20, paddingHorizontal: 16,
+    alignItems: 'center', gap: 6,
     overflow: 'hidden',
-    minHeight: 220,
+    minHeight: 280,
   },
   cardColorBar: {
     position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, opacity: 0.9,
   },
   emblemWrap: {
-    width: 68, height: 68, borderRadius: 34,
+    width: 88, height: 88, borderRadius: 44,
     justifyContent: 'center', alignItems: 'center',
-    marginBottom: 2,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    marginBottom: 4,
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.12)',
   },
   empireName: {
-    fontSize: 12, fontFamily: 'Inter_700Bold',
-    letterSpacing: 2, textAlign: 'center',
+    fontSize: 18, fontFamily: 'Inter_700Bold',
+    letterSpacing: 4, textAlign: 'center',
   },
   leaderName: {
-    fontSize: 13, fontFamily: 'Inter_600SemiBold',
+    fontSize: 14, fontFamily: 'Inter_600SemiBold',
     color: 'rgba(255,230,160,0.75)', textAlign: 'center',
   },
   selectBtn: {

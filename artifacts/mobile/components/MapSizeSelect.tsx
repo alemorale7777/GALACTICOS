@@ -106,19 +106,33 @@ export default function MapSizeSelect({ onSelect, onBack }: Props) {
                 onPress={() => handlePress(ms.key, idx)}
                 activeOpacity={0.8}>
                 <View style={[styles.cardColorBar, { backgroundColor: ms.color }]} />
-                <View style={[styles.iconWrap, { backgroundColor: ms.color + '22' }]}>
+                <View style={[styles.iconWrap, { backgroundColor: ms.color + '15' }]}>
+                  {/* Live mini-map preview with pulsing nodes */}
                   <View style={styles.previewGrid}>
-                    {Array.from({ length: ms.key === 'small' ? 10 : ms.key === 'medium' ? 16 : 24 }).map((_, di) => (
-                      <View key={di} style={[
-                        styles.previewDot,
-                        {
-                          backgroundColor: di < 2 ? (ms.color + 'CC') : di < 3 ? '#EE334499' : '#8D6E6366',
-                          width: ms.key === 'large' ? 4 : 5,
-                          height: ms.key === 'large' ? 4 : 5,
-                          borderRadius: ms.key === 'large' ? 2 : 2.5,
-                        },
-                      ]} />
-                    ))}
+                    {Array.from({ length: ms.key === 'small' ? 10 : ms.key === 'medium' ? 16 : 24 }).map((_, di) => {
+                      const isPlayer = di < 2;
+                      const isEnemy = di >= 2 && di < 4;
+                      const dotColor = isPlayer ? ms.color : isEnemy ? '#EE3344' : '#8D6E63';
+                      const dotSize = ms.key === 'large' ? 4 : 5;
+                      return (
+                        <View key={di} style={{
+                          width: dotSize + (isPlayer || isEnemy ? 2 : 0),
+                          height: dotSize + (isPlayer || isEnemy ? 2 : 0),
+                          borderRadius: (dotSize + 2) / 2,
+                          backgroundColor: dotColor + (isPlayer || isEnemy ? 'DD' : '55'),
+                          shadowColor: isPlayer ? ms.color : isEnemy ? '#EE3344' : 'transparent',
+                          shadowOffset: { width: 0, height: 0 },
+                          shadowOpacity: isPlayer || isEnemy ? 0.8 : 0,
+                          shadowRadius: 4,
+                        }} />
+                      );
+                    })}
+                  </View>
+                  {/* Connection lines overlay */}
+                  <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center' }]} pointerEvents="none">
+                    <View style={{ width: 30, height: 1, backgroundColor: ms.color + '20', position: 'absolute', transform: [{ rotate: '30deg' }] }} />
+                    <View style={{ width: 25, height: 1, backgroundColor: ms.color + '18', position: 'absolute', transform: [{ rotate: '-45deg' }], top: 12 }} />
+                    <View style={{ width: 20, height: 1, backgroundColor: '#EE334415', position: 'absolute', transform: [{ rotate: '60deg' }], top: 28 }} />
                   </View>
                 </View>
                 <View style={styles.textGroup}>

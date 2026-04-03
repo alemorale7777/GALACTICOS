@@ -174,7 +174,22 @@ export function useSoundEngine() {
     fn();
   }, []);
 
-  // ── Sound effects ──────────────────────────────────────────────────────────
+  // ── UI sounds ──────────────────────────────────────────────────────────────
+
+  const sfxTap = useCallback(() => {
+    debounced('tap', 30, () => {
+      playTone(900, 0.04, 'sine', 0.08);
+    });
+  }, [playTone, debounced]);
+
+  const sfxSelect = useCallback(() => {
+    debounced('select', 80, () => {
+      playTone(660, 0.08, 'sine', 0.15);
+      playTone(880, 0.12, 'sine', 0.1);
+    });
+  }, [playTone, debounced]);
+
+  // ── Game sound effects ────────────────────────────────────────────────────
 
   const sfxDispatch = useCallback(() => {
     debounced('dispatch', 50, () => {
@@ -504,6 +519,7 @@ export function useSoundEngine() {
 
   return {
     settings, toggleSound, updateSettings,
+    sfxTap, sfxSelect,
     sfxDispatch, sfxCapture, sfxAbility, sfxImpact,
     sfxVictory, sfxDefeat, sfxRankUp, sfxChallengeComplete,
     playEmpireMotif, sfxEmpireAbility,
