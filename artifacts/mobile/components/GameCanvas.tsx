@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { Platform, PanResponder, StyleSheet, View, Text } from 'react-native';
-import { Fleet, NodeType, Planet, useGame } from '@/context/GameContext';
+import { Fleet, MidairClash, NodeType, Planet, useGame } from '@/context/GameContext';
 import { EmpireConfig, NodeShape } from '@/constants/empires';
 
 // Polyfill for roundRect (Safari < 16)
@@ -1246,7 +1246,7 @@ export default function GameCanvas({
       }
 
       const s = stateRef.current;
-      const { planets, fleets, particles, conquestFlashes, impactFlashes, floatingTexts, nodeHits } = s;
+      const { planets, fleets, particles, conquestFlashes, impactFlashes, floatingTexts, nodeHits, midairClashes } = s;
       const selId = selIdRef.current;
       const allSel = allSelRef.current;
       const ptr = ptrRef.current;
@@ -1727,6 +1727,79 @@ export default function GameCanvas({
         ctx.globalAlpha = 1;
       }
 
+      // ── MIDAIR CLASH EXPLOSIONS ──────────────────────────────────────────
+      for (let i = 0; i < midairClashes.length; i++) {
+        const mc = midairClashes[i];
+        const t = mc.t;
+
+        // Phase 1: White flash disc (0-0.1)
+        if (t < 0.1) {
+          const flashP = t / 0.1;
+          const flashR = 30 * flashP;
+          ctx.beginPath();
+          ctx.arc(mc.x, mc.y, flashR, 0, TWO_PI);
+          ctx.fillStyle = `rgba(255,255,255,${(0.8 * (1 - flashP)).toFixed(3)})`;
+          ctx.fill();
+        }
+
+        // Phase 2: Dual-color shockwave rings (0-0.6)
+        if (t < 0.6) {
+          const ringP = t / 0.6;
+          const ringR = ringP * 60;
+          const ringOp = (1 - ringP) * 0.5;
+          // Attacker ring
+          ctx.beginPath(); ctx.arc(mc.x, mc.y, ringR, 0, TWO_PI);
+          ctx.strokeStyle = `rgba(${mc.colorA},${ringOp.toFixed(3)})`;
+          ctx.lineWidth = 3 * (1 - ringP); ctx.stroke();
+          // Defender ring (slightly delayed)
+          if (t > 0.05) {
+            const ringR2 = (t - 0.05) / 0.55 * 45;
+            const ringOp2 = (1 - (t - 0.05) / 0.55) * 0.4;
+            ctx.beginPath(); ctx.arc(mc.x, mc.y, ringR2, 0, TWO_PI);
+            ctx.strokeStyle = `rgba(${mc.colorB},${ringOp2.toFixed(3)})`;
+            ctx.lineWidth = 2.5 * (1 - (t - 0.05) / 0.55); ctx.stroke();
+          }
+        }
+
+        // Phase 3: Spawn VFX sparks at start
+        if (t < 0.04 && !degraded) {
+          const total = Math.min(12, mc.unitsA + mc.unitsB);
+          for (let s = 0; s < total; s++) {
+            const ang = (s / total) * TWO_PI + Math.random() * 0.3;
+            const spd = 50 + Math.random() * 80;
+            const clr = s % 2 === 0 ? mc.colorA : mc.colorB;
+            spawnVFX(mc.x, mc.y,
+              Math.cos(ang) * spd, Math.sin(ang) * spd,
+              2 + Math.random() * 2, `rgba(${clr},1)`, 400 + Math.random() * 200, 0, 'spark');
+          }
+          // White hot center sparks
+          for (let s = 0; s < 5; s++) {
+            const ang = Math.random() * TWO_PI;
+            const spd = 30 + Math.random() * 60;
+            spawnVFX(mc.x, mc.y,
+              Math.cos(ang) * spd, Math.sin(ang) * spd,
+              1.5 + Math.random(), 'rgba(255,240,200,1)', 300, 40, 'ember');
+          }
+        }
+
+        // Phase 4: Crossing slash marks (0.05-0.4) — X shape
+        if (t > 0.05 && t < 0.4) {
+          const slashP = (t - 0.05) / 0.35;
+          const slashLen = 20 + slashP * 10;
+          const slashOp = (1 - slashP) * 0.6;
+          ctx.strokeStyle = `rgba(255,255,255,${slashOp.toFixed(3)})`;
+          ctx.lineWidth = 2 * (1 - slashP);
+          ctx.beginPath();
+          ctx.moveTo(mc.x - slashLen, mc.y - slashLen);
+          ctx.lineTo(mc.x + slashLen, mc.y + slashLen);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(mc.x + slashLen, mc.y - slashLen);
+          ctx.lineTo(mc.x - slashLen, mc.y + slashLen);
+          ctx.stroke();
+        }
+      }
+
       // ── Fleet arcs (subtle dashed paths) ──
       for (let i = 0; i < fleets.length; i++) {
         const f = fleets[i];
@@ -2005,12 +2078,50 @@ export default function GameCanvas({
           }
         }
 
-        // Under attack warning
+        // Under attack warning — urgency increases as fleet gets closer
         const underAttack = p.owner === 1 && underAttackByEnemy.has(p.id);
         if (underAttack) {
-          const wp = 1 + 0.14 * Math.sin(now / 145);
-          ctx.beginPath(); ctx.arc(px, py, (r + 20) * wp, 0, TWO_PI);
-          ctx.strokeStyle = 'rgba(238,100,0,0.65)'; ctx.lineWidth = 2.5; ctx.stroke();
+          // Find closest incoming enemy fleet progress
+          let closestProgress = 0;
+          for (let fi = 0; fi < fleets.length; fi++) {
+            const ff = fleets[fi];
+            if (ff.owner === 2 && ff.toId === p.id && ff.progress > closestProgress) {
+              closestProgress = ff.progress;
+            }
+          }
+          // Urgency: pulse faster + brighter as fleet approaches
+          const urgency = closestProgress; // 0 = far, 1 = arriving
+          const pulseSpeed = 200 - urgency * 150; // 200ms → 50ms
+          const wp = 1 + (0.08 + urgency * 0.12) * Math.sin(now / pulseSpeed);
+          const warnOp = 0.35 + urgency * 0.45;
+          ctx.beginPath(); ctx.arc(px, py, (r + 16 + urgency * 8) * wp, 0, TWO_PI);
+          ctx.strokeStyle = `rgba(238,100,0,${warnOp.toFixed(3)})`;
+          ctx.lineWidth = 1.5 + urgency * 2; ctx.stroke();
+          // Inner danger glow when fleet is very close
+          if (urgency > 0.6) {
+            const dangerOp = (urgency - 0.6) / 0.4 * 0.15;
+            const dg = ctx.createRadialGradient(px, py, r, px, py, r + 20);
+            dg.addColorStop(0, `rgba(238,80,0,${dangerOp.toFixed(3)})`);
+            dg.addColorStop(1, 'rgba(238,80,0,0)');
+            ctx.fillStyle = dg; ctx.beginPath(); ctx.arc(px, py, r + 20, 0, TWO_PI); ctx.fill();
+          }
+        }
+        // Arrival anticipation for player fleets attacking enemy
+        const playerAttacking = p.owner === 2 && underAttackByPlayer.has(p.id);
+        if (playerAttacking && !enemyHidden) {
+          let attackProgress = 0;
+          for (let fi = 0; fi < fleets.length; fi++) {
+            const ff = fleets[fi];
+            if (ff.owner === 1 && ff.toId === p.id && ff.progress > attackProgress) {
+              attackProgress = ff.progress;
+            }
+          }
+          if (attackProgress > 0.5) {
+            const targetOp = (attackProgress - 0.5) * 0.3;
+            ctx.beginPath(); ctx.arc(px, py, r + 12, 0, TWO_PI);
+            ctx.strokeStyle = `rgba(68,238,102,${targetOp.toFixed(3)})`;
+            ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]);
+          }
         }
 
         // ── TENSION STATE: losing player flicker ──
@@ -2637,6 +2748,38 @@ export default function GameCanvas({
           ctx.beginPath(); ctx.arc(p.x, p.y, fogR, 0, TWO_PI); ctx.fill();
         }
         ctx.globalCompositeOperation = 'source-over';
+      }
+
+      // ── TERRITORY EDGE GLOW — screen borders pulse empire color ──
+      if (playerNodeCount > 0 && !degraded) {
+        const empGlow = pEmpRef.current?.glowRgb ?? '68,238,102';
+        const controlRatio = playerNodeCount / Math.max(1, planets.length);
+        // Glow intensity based on territory control (subtle at 30%, strong at 70%+)
+        const edgeOp = Math.max(0, (controlRatio - 0.25) * 0.12);
+        if (edgeOp > 0.005) {
+          const pulse = 1 + 0.3 * Math.sin(now / 2000);
+          const finalOp = edgeOp * pulse;
+          // Top edge
+          const topGrad = ctx.createLinearGradient(0, 0, 0, 40);
+          topGrad.addColorStop(0, `rgba(${empGlow},${(finalOp * 0.7).toFixed(3)})`);
+          topGrad.addColorStop(1, `rgba(${empGlow},0)`);
+          ctx.fillStyle = topGrad; ctx.fillRect(0, 0, width, 40);
+          // Bottom edge
+          const botGrad = ctx.createLinearGradient(0, height - 40, 0, height);
+          botGrad.addColorStop(0, `rgba(${empGlow},0)`);
+          botGrad.addColorStop(1, `rgba(${empGlow},${(finalOp * 0.5).toFixed(3)})`);
+          ctx.fillStyle = botGrad; ctx.fillRect(0, height - 40, width, 40);
+          // Left edge
+          const leftGrad = ctx.createLinearGradient(0, 0, 30, 0);
+          leftGrad.addColorStop(0, `rgba(${empGlow},${(finalOp * 0.5).toFixed(3)})`);
+          leftGrad.addColorStop(1, `rgba(${empGlow},0)`);
+          ctx.fillStyle = leftGrad; ctx.fillRect(0, 0, 30, height);
+          // Right edge
+          const rightGrad = ctx.createLinearGradient(width - 30, 0, width, 0);
+          rightGrad.addColorStop(0, `rgba(${empGlow},0)`);
+          rightGrad.addColorStop(1, `rgba(${empGlow},${(finalOp * 0.5).toFixed(3)})`);
+          ctx.fillStyle = rightGrad; ctx.fillRect(width - 30, 0, 30, height);
+        }
       }
 
       // ── Victory anticipation vignette ──

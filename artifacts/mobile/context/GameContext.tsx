@@ -99,6 +99,17 @@ export interface NodeHit {
   t: number; // 0→1
 }
 
+export interface MidairClash {
+  id: number;
+  x: number;
+  y: number;
+  t: number; // 0→1 lifetime
+  unitsA: number;
+  unitsB: number;
+  colorA: string; // rgb string
+  colorB: string;
+}
+
 export interface GameState {
   planets: Planet[];
   fleets: Fleet[];
@@ -107,6 +118,7 @@ export interface GameState {
   impactFlashes: ImpactFlash[];
   floatingTexts: FloatingText[];
   nodeHits: NodeHit[];
+  midairClashes: MidairClash[];
   phase: GamePhase;
   gameStartTime: number;
   gameEndTime: number | null;
@@ -390,6 +402,7 @@ function createState(
     impactFlashes: [],
     floatingTexts: [],
     nodeHits: [],
+    midairClashes: [],
     phase: 'playing',
     gameStartTime: Date.now(),
     gameEndTime: null,
@@ -964,6 +977,86 @@ function tick(state: GameState, dt: number): void {
       f.progress = newProgress;
     }
   }
+  // ── MIDAIR FLEET COLLISIONS ─────────────────────────────────────────────
+  // When opposing fleets pass within 22px, they clash and subtract units
+  const COLLISION_DIST = 22;
+  for (let i = 0; i < arrivedStart; i++) {
+    const a = state.fleets[i];
+    if (!a || a.progress >= 1) continue;
+    const srcA = state.planets.find(p => p.id === a.fromId);
+    const tgtA = state.planets.find(p => p.id === a.toId);
+    if (!srcA || !tgtA) continue;
+    // Compute world position of fleet A
+    const aAngle = Math.atan2(tgtA.y - srcA.y, tgtA.x - srcA.x);
+    const aCx = (srcA.x + tgtA.x) / 2 - Math.sin(aAngle) * a.arc;
+    const aCy = (srcA.y + tgtA.y) / 2 + Math.cos(aAngle) * a.arc;
+    const aMt = 1 - a.progress;
+    const ax = aMt * aMt * srcA.x + 2 * aMt * a.progress * aCx + a.progress * a.progress * tgtA.x;
+    const ay = aMt * aMt * srcA.y + 2 * aMt * a.progress * aCy + a.progress * a.progress * tgtA.y;
+
+    for (let j = i + 1; j < arrivedStart; j++) {
+      const b = state.fleets[j];
+      if (!b || b.progress >= 1) continue;
+      if (a.owner === b.owner) continue; // same team, no collision
+      const srcB = state.planets.find(p => p.id === b.fromId);
+      const tgtB = state.planets.find(p => p.id === b.toId);
+      if (!srcB || !tgtB) continue;
+      // Compute world position of fleet B
+      const bAngle = Math.atan2(tgtB.y - srcB.y, tgtB.x - srcB.x);
+      const bCx = (srcB.x + tgtB.x) / 2 - Math.sin(bAngle) * b.arc;
+      const bCy = (srcB.y + tgtB.y) / 2 + Math.cos(bAngle) * b.arc;
+      const bMt = 1 - b.progress;
+      const bx = bMt * bMt * srcB.x + 2 * bMt * b.progress * bCx + b.progress * b.progress * tgtB.x;
+      const by = bMt * bMt * srcB.y + 2 * bMt * b.progress * bCy + b.progress * b.progress * tgtB.y;
+
+      const dx = ax - bx, dy = ay - by;
+      if (dx * dx + dy * dy < COLLISION_DIST * COLLISION_DIST) {
+        // COLLISION! Units subtract
+        const clashX = (ax + bx) / 2, clashY = (ay + by) / 2;
+        const aUnits = a.units, bUnits = b.units;
+        const colorA = a.owner === 1 ? '68,238,102' : '238,51,68';
+        const colorB = b.owner === 1 ? '68,238,102' : '238,51,68';
+
+        if (aUnits > bUnits) {
+          a.units -= bUnits;
+          b.units = 0;
+        } else if (bUnits > aUnits) {
+          b.units -= aUnits;
+          a.units = 0;
+        } else {
+          a.units = 0;
+          b.units = 0;
+        }
+
+        // Spawn clash VFX data
+        state.midairClashes.push({
+          id: uid(), x: clashX, y: clashY, t: 0,
+          unitsA: aUnits, unitsB: bUnits, colorA, colorB,
+        });
+
+        // Floating text showing the clash
+        const total = aUnits + bUnits;
+        state.floatingTexts.push({
+          id: uid(), x: clashX, y: clashY - 15,
+          text: `${Math.min(aUnits, bUnits)} lost!`,
+          color: '#FF8844', t: 0, size: 13,
+        });
+
+        // Explosion particles at clash point
+        spawnParticlesPooled(clashX, clashY, colorA, 4, 6.0, a.owner);
+        spawnParticlesPooled(clashX, clashY, colorB, 4, 6.0, b.owner);
+        spawnParticlesPooled(clashX, clashY, '255,255,255', 3, 8.0, 0);
+      }
+    }
+  }
+  // Remove destroyed fleets (0 units)
+  for (let i = arrivedStart - 1; i >= 0; i--) {
+    if (state.fleets[i] && state.fleets[i].units <= 0) {
+      state.fleets.splice(i, 1);
+      arrivedStart--;
+    }
+  }
+
   // Process arrived fleets (from arrivedStart to end)
   const arrivedFleets = state.fleets.splice(arrivedStart);
 
@@ -1130,6 +1223,12 @@ function tick(state: GameState, dt: number): void {
     inf.t += dt * 3.6;
   }
   state.impactFlashes = state.impactFlashes.filter(inf => inf.t < 1);
+
+  // ── Midair clashes ─────────────────────────────────────────────────────
+  for (const mc of state.midairClashes) {
+    mc.t += dt * 1.2; // ~800ms lifetime
+  }
+  state.midairClashes = state.midairClashes.filter(mc => mc.t < 1);
 
   // ── Floating texts ─────────────────────────────────────────────────────
   for (const ft of state.floatingTexts) {
