@@ -473,7 +473,7 @@ export default function GameApp() {
     setMapSize(size);
     setRegicideMode(gm);
     if (!tutorialSeen) { setScreen('tutorial'); }
-    else { goToGame('quickplay'); replays.startRecording(); }
+    else { goToGame('quickplay'); }
   };
 
   const handleTutorialDone = () => {
