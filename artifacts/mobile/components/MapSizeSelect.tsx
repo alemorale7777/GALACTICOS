@@ -220,7 +220,7 @@ export default function MapSizeSelect({ onSelect, onBack }: Props) {
                 )}
               </View>
               <Text style={[styles.modeTitle, isDomination && { color: '#AA44FF' }]}>DOMINATION</Text>
-              <Text style={styles.modeDesc}>Control 75% of nodes to dominate</Text>
+              <Text style={styles.modeDesc}>Control 70% of nodes to dominate</Text>
             </TouchableOpacity>
           </Animated.View>
         </View>
@@ -232,7 +232,7 @@ export default function MapSizeSelect({ onSelect, onBack }: Props) {
           ? 'Capture all enemy territory to claim victory'
           : gameMode === 'regicide'
           ? 'Strike down the enemy King for instant victory'
-          : 'Control 75% of all nodes to achieve domination'}
+          : 'Control 70% of all nodes to achieve domination'}
       </Text>
     </View>
   );

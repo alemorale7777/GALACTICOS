@@ -1092,6 +1092,17 @@ function tick(state: GameState, dt: number): void {
     }
   }
 
+  // ── Domination: AI resilience — if AI has ≤1 node, boost its growth to stay competitive
+  if (state.gameMode === 'domination') {
+    const aiNodes = state.planets.filter(p => p.owner === 2);
+    if (aiNodes.length <= 1 && aiNodes.length > 0) {
+      // Emergency boost: triple growth on last AI node to prevent total wipeout
+      for (const an of aiNodes) {
+        an.units = Math.min(999, an.units + 0.15 * dt * 60);
+      }
+    }
+  }
+
   // ── AI ──────────────────────────────────────────────────────────────────
   aiTick(state, dt);
 
@@ -1228,24 +1239,31 @@ function tick(state: GameState, dt: number): void {
     }
   }
 
-  // Domination mode — control 75% of all nodes to win
+  // Domination mode — control 70% of all nodes to win (skip standard elimination)
   if (state.gameMode === 'domination') {
     const total = state.planets.length;
     if (total > 0) {
-      if (playerPlanets.length >= Math.ceil(total * 0.75)) {
+      const domThreshold = Math.ceil(total * 0.70);
+      if (playerPlanets.length >= domThreshold) {
         state.phase = 'won';
         state.gameEndTime = Date.now();
         return;
       }
-      if (enemyPlanets.length >= Math.ceil(total * 0.75)) {
+      if (enemyPlanets.length >= domThreshold) {
         state.phase = 'lost';
         state.gameEndTime = Date.now();
         return;
       }
     }
+    // In domination, you can still lose if fully eliminated
+    if (playerPlanets.length === 0 && playerFleets === 0) {
+      state.phase = 'lost';
+      state.gameEndTime = Date.now();
+    }
+    return; // Skip standard elimination — game continues even if AI has 0 nodes
   }
 
-  // Standard elimination check
+  // Standard elimination check (conquest & regicide)
   if (playerPlanets.length === 0 && playerFleets === 0) {
     state.phase = 'lost';
     state.gameEndTime = Date.now();
